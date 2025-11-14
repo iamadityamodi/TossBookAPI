@@ -18,10 +18,12 @@ app.use(express.urlencoded({ extended: true })); // ✅ Parse form-data
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+
 // Static folder for uploads
 app.use('/upload', express.static(path.join(__dirname, 'upload')));
 
 const goldRoutes = require("./routes/tossbookroute");
+const PORT = process.env.PORT || 8080;
 app.use('/api/v1/tossbook', goldRoutes);
 
 app.get('/get', (req, res) =>{
@@ -32,8 +34,7 @@ app.get('/get', (req, res) =>{
  
 
 
-const PORT = 8080
-
+ 
 
 app.listen(PORT,()=>{
     console.log('Server running')

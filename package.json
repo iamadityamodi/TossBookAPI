@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon server.js"
+    "start": "node server.js"
   },
   "author": "Adityamodi",
   "license": "ISC",
@@ -19,5 +19,8 @@
     "multer": "^2.0.2",
     "mysql2": "^3.15.2"
   },
-  "keywords": []
+  "keywords": [],
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
 }
