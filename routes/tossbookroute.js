@@ -1,16 +1,10 @@
-const express = require('express')
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+import express from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
-
-const app = express();
-app.use(express.json()); // Important to parse JSON body
-
-
- 
-
-const {
+// Import all controller functions using ES Modules
+import {
   createUser,
   loginType,
   createTwoTeamMatch,
@@ -25,43 +19,45 @@ const {
   createAllBetsWithImage,
   upload,
   getBetTransaction,
-  WithdrawalMoney,
-
-} = require('../controllers/tossbookcontrollers')
+  WithdrawalMoney
+} from "../controllers/tossbookcontrollers.js";
 
 const router = express.Router();
 
-router.post('/createuser', createUser);
+// Routes
+router.post("/createuser", createUser);
 
-router.post('/login', login);
+router.post("/login", login);
 
-router.post('/loginType', loginType);
+router.post("/loginType", loginType);
 
-router.post('/bets', createAllBets);
+router.post("/bets", createAllBets);
 
-router.post('/betsImage', upload.single("image"), createAllBetsWithImage);
+router.post("/betsImage", upload.single("image"), createAllBetsWithImage);
 
-router.post('/getAllBats', getAllBat);
+router.post("/getAllBats", getAllBat);
 
-router.get('/getAllUser', getAllUser);
+router.get("/getAllUser", getAllUser);
 
-router.post('/getBetTransaction', getBetTransaction);
+router.post("/getBetTransaction", getBetTransaction);
 
+router.post("/insertCointInWallet", insert_CoinInWallet);
 
-router.post('/insertCointInWallet', insert_CoinInWallet);
+router.post("/WithdrawalMoney", WithdrawalMoney);
 
-router.post('/WithdrawalMoney', WithdrawalMoney);
+router.post("/wallet", GetWallet);
 
-router.post('/wallet', GetWallet);
+router.post("/place_bet", placebet);
 
-router.post('/place_bet', placebet);
+router.post(
+  "/winningStatsuUpdate",
+  winningStatsuUpdate
+);
 
-router.post('/winningStatsuUpdate', winningStatsuUpdate);
+router.post(
+  "/createTwoTeamMatch",
+  upload.single("matchimage"),
+  createTwoTeamMatch
+);
 
-router.post('/createTwoTeamMatch', upload.single('matchimage'), createTwoTeamMatch);
-
-
-
-
-
-export default router
+export default router;
