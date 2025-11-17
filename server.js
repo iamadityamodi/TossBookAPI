@@ -1,34 +1,40 @@
-const express = require("express");
-const multer = require('multer')
-const path = require('path')
-const mysql = require('mysql2/promise')
-const bodyParser = require('body-parser')
-const cors = require('cors');
+import express from "express";
+import multer from "multer";
+import mysql from "mysql2/promise";
+import bodyParser from "body-parser";
+import cors from "cors";
+import { fileURLToPath } from "url";
+import path from "path";
 
-const app = express()
+// Fix __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+const app = express();
+
+// Middleware
 app.use(cors());
-app.use(express.json()); // ✅ Parse application/json
-app.use(express.urlencoded({ extended: true })); // ✅ Parse form-data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// EJS for HTML rendering
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+// View engine
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
 
+// Static folder
+app.use("/upload", express.static(path.join(__dirname, "upload")));
 
-// Static folder for uploads
-app.use('/upload', express.static(path.join(__dirname, 'upload')));
+// Routes
+import goldRoutes from "./routes/tossbookroute.js";
+app.use("/api/v1/tossbook", goldRoutes);
 
-const goldRoutes = require("./routes/tossbookroute");
+// Test route
+app.get("/get", (req, res) => {
+  res.status(200).send("<h1>Working fine now</h1>");
+});
+
 const PORT = process.env.PORT || 8080;
-app.use('/api/v1/tossbook', goldRoutes);
 
-app.get('/get', (req, res) =>{
-    res.status(200).send('<h1>Working fine now</h1>')
-
-})
- 
-
-app.listen(PORT,()=>{
-    console.log('Server running')
-})
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
