@@ -1,4 +1,4 @@
-import db from "../config/db.js";   // Note: include .js extension in ESM
+import db from "../config/db.js";
 import multer from "multer";
 import path from "path";
 import { DateTime } from "luxon";
