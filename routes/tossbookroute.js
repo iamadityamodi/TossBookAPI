@@ -64,4 +64,4 @@ router.post('/createTwoTeamMatch', upload.single('matchimage'), createTwoTeamMat
 
 
 
-module.exports = router
+export default router
