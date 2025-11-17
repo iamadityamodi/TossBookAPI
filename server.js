@@ -5,11 +5,8 @@ const mysql = require('mysql2/promise')
 const bodyParser = require('body-parser')
 const cors = require('cors');
 
-
-
 const app = express()
 
- 
 app.use(cors());
 app.use(express.json()); // ✅ Parse application/json
 app.use(express.urlencoded({ extended: true })); // ✅ Parse form-data
@@ -30,10 +27,6 @@ app.get('/get', (req, res) =>{
     res.status(200).send('<h1>Working fine now</h1>')
 
 })
- 
- 
-
-
  
 
 app.listen(PORT,()=>{

@@ -162,6 +162,14 @@ const winningStatsuUpdate = async (req, res) => {
             return res.status(400).send({ success: false, message: 'Please select winning team' });
         }
 
+        const [totalBetData] = await db.query(
+            "SELECT SUM(amountOfBat) AS totalBetAmount FROM tblbattranscation WHERE betId = ?",
+            [betId]
+        );
+
+        const totalBetAmount = totalBetData[0].totalBetAmount || 0;
+
+
         // 🟡 CASE 1: MATCH CANCELLED
         if (winnerTeam.toLowerCase() === "cancel" || winnerTeam.toLowerCase() === "canceled") {
             // 1. Reset all batStatus to 'cancelled'
@@ -175,6 +183,7 @@ const winningStatsuUpdate = async (req, res) => {
                 "SELECT user_name, amountOfBat FROM tblbattranscation WHERE betId = ?",
                 [betId]
             );
+
 
             let totalRefund = 0;
 
@@ -307,6 +316,7 @@ const winningStatsuUpdate = async (req, res) => {
             success: true,
             message: "Match result updated & winnings/loss exposure applied",
             winners: totalWinners,
+            totalBetAmount: totalBetAmount,
             totalWinningAmount: totalAmount,
             losers: losers.length
         });
@@ -656,20 +666,30 @@ const insert_CoinInWallet = async (req, res) => {
 
 
 
-        console.log("User Name", getUserName[0].user_name)
+        console.log("User Name:", getUserName[0].user_name);
 
+        // 1️⃣ Try update
         const [result] = await db.query(
-            "UPDATE tblWallet SET tblWalletcol = tblWalletcol + ? WHERE user_id = ?",
-            [coins, user_id]
+            `UPDATE tblWallet 
+     SET tblWalletcol = tblWalletcol + ?, totalamount = totalamount + ? 
+     WHERE user_id = ?`,
+            [coins, coins, user_id]
         );
 
+        console.log("Update result:", result);
+
+        // 2️⃣ If no rows updated -> insert new row
         if (result.affectedRows === 0) {
+
+            console.log("No existing wallet found → inserting new row");
+
             await db.query(
-                "INSERT INTO tblWallet (user_id, user_name, tblWalletcol) VALUES (?, ?, ?)",
-                [user_id, getUserName[0].user_name, coins]
+                `INSERT INTO tblWallet 
+        (user_id, user_name, tblWalletcol, totalamount)
+        VALUES (?, ?, ?, ?)`,
+                [user_id, getUserName[0].user_name, coins, coins]
             );
         }
-
         // Fetch updated coins
         const [rows] = await db.query(
             "SELECT user_id, fullname FROM tblregistration WHERE user_id = ?",
@@ -720,6 +740,33 @@ const createUser = async (req, res) => {
             })
         }
 
+        // 0️⃣ Check if username already exists
+        const [existingUser] = await db.query(
+            "SELECT user_id FROM tblregistration WHERE user_name = ?",
+            [user_name]
+        );
+
+        if (existingUser.length > 0) {
+            return res.status(400).send({
+                success: false,
+                message: "Username already exists, please enter another one."
+            });
+        }
+
+        // 1️⃣ Check if mobile number already exists
+        const [existingMobile] = await db.query(
+            "SELECT user_id FROM tblregistration WHERE mobile_no = ?",
+            [mobile_no]
+        );
+
+        if (existingMobile.length > 0) {
+            return res.status(400).send({
+                success: false,
+                message: "Mobile number already exists, please enter another number."
+            });
+        }
+
+
         const ageValue = ages === '' ? null : Number(ages);
         const date = new Date();
 
@@ -742,7 +789,7 @@ const createUser = async (req, res) => {
 
         // 2️⃣ Create wallet automatically with balance=0 and exposure=0
         await db.query(
-            "INSERT INTO tblwallet (user_id, user_name, tblWalletcol, exposure) VALUES (?, ?, 0, 0)",
+            "INSERT INTO tblwallet (user_id, user_name, tblWalletcol, totalamount, exposure) VALUES (?, ?, 0, 0, 0)",
             [userId, userIdName]
         );
 
