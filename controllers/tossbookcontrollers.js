@@ -75,6 +75,41 @@ const login = async (req, res) => {
 // B2B UNBOUND
 
 
+const GetMatchcompletedstatus = async (req, res) => {
+
+    try {
+
+
+        const [data] = await db.query(" SELECT * FROM tblallmatchprofitloss")
+
+        // data will always be an array, so check its length
+        if (data.length === 0) {
+            return res.status(404).send({
+                success: false,
+                message: 'No users found',
+                data: []
+            });
+        }
+
+
+        res.status(200).send({
+            success: true,
+            message: 'Success.',
+            data: data,
+        })
+    } catch (error) {
+        console.log(error)
+        res.status(500).send({
+            success: false,
+            message: 'Error in Get All Student API',
+            error
+        })
+    }
+
+}
+
+
+
 const getAllUser = async (req, res) => {
 
     try {
@@ -375,12 +410,14 @@ const winningStatsuUpdate = async (req, res) => {
         }
 
         const matchData = rows[0];
+        const newId = new ObjectId().toString(); // "68f3c188b6ecebf82de1e767"
 
         // 2. Insert into another table tbldemo
         await db.query(
-            `INSERT INTO tblallmatchprofitloss (id, totalBetAmount, totalWinningAmount, totalwinners, totallosers, teamAname, teamBname, leagueName)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO tblallmatchprofitloss (id, matchId, totalBetAmount, totalWinningAmount, totalwinners, totallosers, teamAname, teamBname, leagueName)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
+                newId,
                 matchData.id,
                 totalBetAmount,
                 totalAmount,
@@ -748,8 +785,9 @@ const insert_CoinInWallet = async (req, res) => {
 
 
 
-        console.log("User Name:", getUserName[0].user_name);
-
+        console.log("getUserName",getUserName);
+        
+ 
         // 1️⃣ Try update
         const [result] = await db.query(
             `UPDATE tblWallet 
@@ -758,8 +796,7 @@ const insert_CoinInWallet = async (req, res) => {
             [coins, coins, user_id]
         );
 
-        console.log("Update result:", result);
-
+ 
         // 2️⃣ If no rows updated -> insert new row
         if (result.affectedRows === 0) {
 
@@ -1424,4 +1461,4 @@ function getIndianDateTime() {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export { upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser, insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet, createAllBetsWithImage, getBetTransaction, WithdrawalMoney }
+export { upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser, insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet, createAllBetsWithImage, getBetTransaction, WithdrawalMoney ,GetMatchcompletedstatus}

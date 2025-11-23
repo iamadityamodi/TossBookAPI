@@ -19,7 +19,8 @@ import {
   createAllBetsWithImage,
   upload,
   getBetTransaction,
-  WithdrawalMoney
+  WithdrawalMoney,
+  GetMatchcompletedstatus
 } from "../controllers/tossbookcontrollers.js";
 
 const router = express.Router();
@@ -46,6 +47,8 @@ router.post("/insertCointInWallet", insert_CoinInWallet);
 router.post("/WithdrawalMoney", WithdrawalMoney);
 
 router.post("/wallet", GetWallet);
+
+router.post("/matchcompletedstatus", GetMatchcompletedstatus);
 
 router.post("/place_bet", placebet);
 
