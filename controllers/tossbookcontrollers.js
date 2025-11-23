@@ -82,12 +82,15 @@ const getAllUser = async (req, res) => {
 
         const [data] = await db.query(" SELECT * FROM tblregistration")
 
-        if (!data) {
-            return req.status(404).send({
+        // data will always be an array, so check its length
+        if (data.length === 0) {
+            return res.status(404).send({
                 success: false,
-                message: 'No data found',
-            })
+                message: 'No users found',
+                data: []
+            });
         }
+
 
         res.status(200).send({
             success: true,
@@ -149,6 +152,30 @@ const getBetTransaction = async (req, res) => {
         });
     }
 };
+
+
+const getTotalWalletAmount = async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            "SELECT SUM(totalamount) AS totalAmount FROM tblwallet"
+        );
+
+        const total = rows[0].totalAmount || 0;
+
+        res.status(200).send({
+            success: true,
+            totalAmount: total
+        });
+
+    } catch (error) {
+        res.status(500).send({
+            success: false,
+            message: "Error fetching total wallet amount",
+            error: error.message
+        });
+    }
+};
+
 
 
 
@@ -257,7 +284,21 @@ const winningStatsuUpdate = async (req, res) => {
             const userName = winner.user_name.trim();
             const amountOfBat = parseFloat(winner.amountOfBat);
 
-            const winningAmount = amountOfBat + amountOfBat * 0.95; // 95% profit
+            const [tossRate1] = await db.query(
+                "SELECT tossRate FROM tblbattranscation WHERE betId = ?",
+                [betId]
+            );
+
+            if (tossRate1.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: "No tossRate found for this betId"
+                });
+            }
+
+            const rate = parseFloat(tossRate1[0].tossRate); // example: 95, 97, 100
+
+            const winningAmount = amountOfBat + (amountOfBat * (rate / 100));
             totalWinners++;
             totalAmount += winningAmount;
 
@@ -311,6 +352,47 @@ const winningStatsuUpdate = async (req, res) => {
                 );
             }
         }
+
+        // ⭐ FINAL: UPDATE tblallbetgetid status to "completed"
+        await db.query(
+            "UPDATE tblallbetgetid SET Status = 'completed' WHERE id = ?",
+            [betId]
+        );
+
+        // 1. Get selected columns from tblmatch
+        const [rows] = await db.query(
+            `SELECT id, teamAname, teamBname, leagueName 
+             FROM allbets 
+             WHERE id = ?`,
+            [betId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).send({
+                success: false,
+                message: "Match not found"
+            });
+        }
+
+        const matchData = rows[0];
+
+        // 2. Insert into another table tbldemo
+        await db.query(
+            `INSERT INTO tblallmatchprofitloss (id, totalBetAmount, totalWinningAmount, totalwinners, totallosers, teamAname, teamBname, leagueName)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                matchData.id,
+                totalBetAmount,
+                totalAmount,
+                totalWinners,
+                losers.length,
+                matchData.teamAname,
+                matchData.teamBname,
+                matchData.leagueName
+            ]
+        );
+
+
 
         return res.status(200).send({
             success: true,
@@ -1253,6 +1335,7 @@ const createAllBetsWithImage = async (req, res) => {
         res.status(201).json({
             success: true,
             message: "Successfully inserted current bet",
+            id: newId,
             fullUrl: `http://localhost:8080${imageUrl}`
 
         });

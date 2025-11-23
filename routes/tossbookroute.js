@@ -49,15 +49,8 @@ router.post("/wallet", GetWallet);
 
 router.post("/place_bet", placebet);
 
-router.post(
-  "/winningStatsuUpdate",
-  winningStatsuUpdate
-);
+router.post("/winningStatsuUpdate",winningStatsuUpdate);
 
-router.post(
-  "/createTwoTeamMatch",
-  upload.single("matchimage"),
-  createTwoTeamMatch
-);
+router.post("/createTwoTeamMatch",upload.single("matchimage"),createTwoTeamMatch);
 
 export default router;
