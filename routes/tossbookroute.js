@@ -51,6 +51,8 @@ router.post("/place_bet", placebet);
 
 router.post("/winningStatsuUpdate",winningStatsuUpdate);
 
+// router.post("/allsattlement",allsattlement);
+
 router.post("/createTwoTeamMatch",upload.single("matchimage"),createTwoTeamMatch);
 
 export default router;
