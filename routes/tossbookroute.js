@@ -20,7 +20,8 @@ import {
   upload,
   getBetTransaction,
   WithdrawalMoney,
-  GetMatchcompletedstatus
+  GetMatchcompletedstatus,
+  getAllbetgetid
 } from "../controllers/tossbookcontrollers.js";
 
 const router = express.Router();
@@ -39,6 +40,8 @@ router.post("/betsImage", upload.single("image"), createAllBetsWithImage);
 router.post("/getAllBats", getAllBat);
 
 router.get("/getAllUser", getAllUser);
+
+router.post("/getAllbetgetid", getAllbetgetid);
 
 router.post("/getBetTransaction", getBetTransaction);
 

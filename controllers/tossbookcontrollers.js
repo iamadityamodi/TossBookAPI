@@ -110,6 +110,53 @@ const GetMatchcompletedstatus = async (req, res) => {
 
 
 
+const getAllbetgetid = async (req, res) => {
+
+    try {
+
+
+        const { status } = req.body;
+
+        let query = "SELECT * FROM tblallbetgetid";
+        let params = [];
+
+        if (status) {
+            query += " WHERE Status = ?";
+            params.push(status);
+        }
+
+        query += " ORDER BY id DESC";
+
+        const [data] = await db.query(query, params);
+
+        // data will always be an array, so check its length
+        if (data.length === 0) {
+            return res.status(404).send({
+                success: false,
+                message: 'No data found',
+                data: []
+            });
+        }
+
+
+        res.status(200).send({
+            success: true,
+            message: 'Success.',
+            data: data,
+        })
+    } catch (error) {
+        console.log(error)
+        res.status(500).send({
+            success: false,
+            message: 'Error in Get All Student API',
+            error
+        })
+    }
+
+}
+
+
+
 const getAllUser = async (req, res) => {
 
     try {
@@ -145,7 +192,7 @@ const getAllUser = async (req, res) => {
 
 const getBetTransaction = async (req, res) => {
     try {
-        const { user_name } = req.body;
+        const { betId, user_name } = req.body;
 
         const [data] = await db.query("SELECT * FROM tblbattranscation ORDER BY timeStamp DESC");
 
@@ -153,6 +200,11 @@ const getBetTransaction = async (req, res) => {
         const filteredData = data.filter(row => {
             let match = true;
 
+
+            // Filter only if id has a value
+            if (betId) {
+                match = match && row.betId == betId;
+            }
 
             // Filter only if id has a value
             if (user_name) {
@@ -1461,4 +1513,4 @@ function getIndianDateTime() {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export { upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser, insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet, createAllBetsWithImage, getBetTransaction, WithdrawalMoney ,GetMatchcompletedstatus}
+export { upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser, insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet, createAllBetsWithImage, getBetTransaction, WithdrawalMoney ,GetMatchcompletedstatus,getAllbetgetid}
