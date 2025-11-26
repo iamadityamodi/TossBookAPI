@@ -80,13 +80,27 @@ const GetMatchcompletedstatus = async (req, res) => {
     try {
 
 
-        const [data] = await db.query(" SELECT * FROM tblallmatchprofitloss")
+        const { matchId } = req.body;
 
+
+        let query = "SELECT * FROM tblallmatchprofitloss";
+        let params = [];
+
+        if (matchId) {
+            query += " WHERE Status = ?";
+            params.push(matchId);
+        }
+
+        query += " ORDER BY id DESC";
+
+        const [data] = await db.query(query, params);
+
+ 
         // data will always be an array, so check its length
         if (data.length === 0) {
             return res.status(404).send({
                 success: false,
-                message: 'No users found',
+                message: 'No data found',
                 data: []
             });
         }
@@ -1278,41 +1292,22 @@ const createAllBets = async (req, res) => {
         const newId = new ObjectId().toString(); // "68f3c188b6ecebf82de1e767"
 
 
-        const formatDateForMySQL = (date) => {
-            const d = new Date(date);
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            const hh = String(d.getHours()).padStart(2, '0');
-            const min = String(d.getMinutes()).padStart(2, '0');
-            const ss = String(d.getSeconds()).padStart(2, '0');
-            return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
-        };
+         // ----------- Convert times to UTC ------------
+        // Bet start time (now) in IST → convert to UTC
+        const betStartTimeUTC = DateTime.now()
+            .setZone("Asia/Kolkata")
+            .toUTC()
+            .toFormat("yyyy-MM-dd HH:mm:ss");
 
+        // Bet end time from frontend (IST) → convert to UTC
+        const betEndTimeUTC = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "Asia/Kolkata" })
+            .toUTC()
+            .toFormat("yyyy-MM-dd HH:mm:ss");
 
-
-
-
-
-        // Example input from frontend or database
-
-        // Parse in IST
-        const dt = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "Asia/Kolkata" });
-
-        // Current IST for betStartTime
-        const betStartTime = DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm:ss");
-
-        // Format betEndTime for DB (keep MySQL-compatible)
-        const betEndTimeNew = formatDateForMySQL(betEndTime);
-        const now = DateTime.now().setZone("Asia/Kolkata");
-
-        console.log("betEndTimeNew", now)
-        console.log("betEndTimeNew", betEndTimeNew)
-
-
-        console.log("now", now);
-        // Check if bet is active
-        const isActive = now <= dt ? 1 : 0;
+        // ----------- Check if bet is active (current IST time <= betEndTime) ------------
+        const nowIST = DateTime.now().setZone("Asia/Kolkata");
+        const betEndIST = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "Asia/Kolkata" });
+        const isActive = nowIST <= betEndIST ? 1 : 0;
 
 
 
