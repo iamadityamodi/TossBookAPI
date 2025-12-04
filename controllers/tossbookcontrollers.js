@@ -152,7 +152,6 @@ const getAllbetgetid = async (req, res) => {
             });
         }
 
-
         res.status(200).send({
             success: true,
             message: 'Success.',
@@ -393,7 +392,7 @@ const winningStatsuUpdate = async (req, res) => {
             if (tossRate1.length === 0) {
                 return res.status(404).json({
                     success: false,
-                    message: "No tossRate found for this betId"
+                    message: "No toss Rate found for this bet of ID"
                 });
             }
 
@@ -471,7 +470,7 @@ const winningStatsuUpdate = async (req, res) => {
         if (rows.length === 0) {
             return res.status(404).send({
                 success: false,
-                message: "Match not found"
+                message: "Matches not found"
             });
         }
 
@@ -529,7 +528,7 @@ const placebet = async (req, res) => {
         if (!userName) {
             return res.status(500).send({
                 success: false,
-                message: 'Please name'
+                message: 'Please your name'
             })
         } else if (!betId) {
             return res.status(500).send({
