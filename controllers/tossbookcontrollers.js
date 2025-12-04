@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import { DateTime } from "luxon";
 import { ObjectId } from "bson";
-import { log } from "console";
+
 
 
 
@@ -95,7 +95,7 @@ const GetMatchcompletedstatus = async (req, res) => {
 
         const [data] = await db.query(query, params);
 
- 
+
         // data will always be an array, so check its length
         if (data.length === 0) {
             return res.status(404).send({
@@ -851,9 +851,9 @@ const insert_CoinInWallet = async (req, res) => {
 
 
 
-        console.log("getUserName",getUserName);
-        
- 
+        console.log("getUserName", getUserName);
+
+
         // 1️⃣ Try update
         const [result] = await db.query(
             `UPDATE tblWallet 
@@ -862,7 +862,7 @@ const insert_CoinInWallet = async (req, res) => {
             [coins, coins, user_id]
         );
 
- 
+
         // 2️⃣ If no rows updated -> insert new row
         if (result.affectedRows === 0) {
 
@@ -1035,6 +1035,107 @@ const loginType = async (req, res) => {
     }
 }
 
+const getNewBet = async (req, res) => {
+    try {
+        const { userTimeZone } = req.body;
+        const zone = userTimeZone || "Asia/Kolkata";
+
+        const [rows] = await db.query("SELECT betEndTimeUTC FROM tblnewbets");
+
+        const final = rows.map(row => {
+            const value = row.betEndTimeUTC; // "2025-12-02 17:35:00"
+
+            const dt = DateTime.fromSQL(value, { zone: "utc" });
+
+            const local = dt.setZone(zone).toFormat("yyyy-MM-dd hh:mm a");
+
+            return {
+                betEndTimeUTC: value,
+                betEndTimeLocal: local
+            };
+        });
+
+        res.json({ success: true, data: final });
+
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+}
+
+const createNewBet = async (req, res) => {
+    try {
+
+        const { betEndTimeLocal } = req.body;
+        const userZone = "Asia/Kolkata";
+
+
+        const newId = new ObjectId().toString();
+
+        // Example: "2025-12-02 11:05 PM"
+        const userTime = DateTime.fromFormat(
+            betEndTimeLocal,
+            "yyyy-MM-dd hh:mm a",
+            { zone: userZone }
+        );
+
+        if (!userTime.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid date",
+                detail: userTime.invalidExplanation
+            });
+        }
+
+        // Convert → UTC → MySQL
+        const mysqlUTC = userTime.toUTC().toFormat("yyyy-MM-dd HH:mm:ss");
+
+        await db.query(
+            "INSERT INTO tblnewbets (id, betEndTimeUTC) VALUES (?, ?)",
+            [newId, mysqlUTC]
+        );
+
+        res.json({ success: true, storedUTC: mysqlUTC });
+
+        // const { betEndTimeLocal, userTimeZone } = req.body;
+
+        // // Example:
+        // // betEndTimeLocal = "2025-12-02 04:05 PM"
+        // // userTimeZone = "Asia/Kolkata"
+
+        // const newId = new ObjectId().toString();
+
+        // const dt = DateTime.fromFormat(
+        //     betEndTimeLocal,
+        //     "yyyy-MM-dd hh:mm a",
+        //     { zone: userTimeZone }
+        // );
+
+        // if (!dt.isValid) {
+        //     console.log(dt.invalidExplanation);
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: "Invalid datetime format",
+        //         detail: dt.invalidExplanation
+        //     });
+        // }
+
+        // // Convert to UTC MySQL DATETIME
+        // const mysqlUTC = dt.toUTC().toFormat("yyyy-MM-dd HH:mm:ss");
+        // await db.query(
+        //     "INSERT INTO tblnewbets (id, betEndTimeUTC) VALUES (?, ?)",
+        //     [newId, mysqlUTC]
+        // );
+
+        // res.json({ success: true, stored: mysqlUTC });
+    } catch (err) {
+        console.log("Error:", err);
+        return res.status(500).json({ success: false, message: err.message, error: err });
+    }
+};
+
+
+
 
 const getAllBatForStatusUpdate = async (req, res) => {
     try {
@@ -1143,7 +1244,6 @@ const getAllBatForStatusUpdate = async (req, res) => {
     }
 };
 
-
 const getAllBat = async (req, res) => {
     try {
         const { id, isActive: bodyIsActive, isDelete: bodyIsDelete, user_name } = req.body;
@@ -1156,19 +1256,18 @@ const getAllBat = async (req, res) => {
             return res.status(404).json({ success: false, message: "No bets found" });
         }
 
-        // 2️⃣ Fetch ONLY the logged-in user’s bet transactions
+        // 2️⃣ Fetch logged-in user's bet transactions
         let userBets = {};
         if (user_name) {
             const [userBetData] = await db.query(
                 `SELECT betId, batteamname, amountOfBat, batStatus 
-         FROM tblbattranscation 
-         WHERE LOWER(user_name) = LOWER(?)`,
+                 FROM tblbattranscation 
+                 WHERE LOWER(user_name) = LOWER(?)`,
                 [user_name]
             );
 
-            console.log(`📗 Bets found for user: ${user_name} =>`, userBetData.length);
+            console.log(`📗 User bets found: ${userBetData.length}`);
 
-            // Create a lookup map (only this user’s bets)
             userBetData.forEach((bet) => {
                 const betId = bet.betId?.toString().trim();
                 if (!userBets[betId]) {
@@ -1182,36 +1281,40 @@ const getAllBat = async (req, res) => {
             });
         }
 
-        // 3️⃣ Enrich allBets with user-specific info
+        // 3️⃣ Enrich all bets with user-specific & time-specific info
         const enrichedData = allBets.map((row) => {
-            const now = DateTime.utc();
-            let betEnd;
-            const rawValue = row.betEndTime;
+            const nowUTC = DateTime.utc();
+            let betEndUTC;
 
-            if (!rawValue) row.isActive = false;
-            else if (rawValue instanceof Date)
-                betEnd = DateTime.fromJSDate(rawValue, { zone: "utc" });
-            else if (typeof rawValue === "string")
-                betEnd = rawValue.includes("T")
-                    ? DateTime.fromISO(rawValue, { zone: "utc" })
-                    : DateTime.fromSQL(rawValue, { zone: "utc" });
-            else if (typeof rawValue === "number")
-                betEnd = DateTime.fromMillis(rawValue, { zone: "utc" });
+            // Normalize DB value (supports SQL, ISO, JS Date, Milliseconds)
+            const raw = row.betEndTime;
 
-            row.isActive = betEnd?.isValid ? now < betEnd : false;
+            if (!raw) {
+                row.isActive = false;
+            } else if (raw instanceof Date) {
+                betEndUTC = DateTime.fromJSDate(raw, { zone: "utc" });
+            } else if (typeof raw === "string") {
+                betEndUTC = raw.includes("T")
+                    ? DateTime.fromISO(raw, { zone: "utc" })
+                    : DateTime.fromSQL(raw, { zone: "utc" });
+            } else if (typeof raw === "number") {
+                betEndUTC = DateTime.fromMillis(raw, { zone: "utc" });
+            }
+
+            // Validate & determine isActive
+            row.isActive = betEndUTC?.isValid ? nowUTC < betEndUTC : false;
             row.isDelete = !!row.isDelete;
 
+            // Attach user bet details
             const betIdKey = row.id?.toString().trim();
             const userBet = userBets[betIdKey];
 
             if (userBet) {
-                console.log(`📗 if Bets found for user: ${user_name} =>`, userBet);
                 row.userHasBet = true;
                 row.userBetTeam = userBet.teamName;
                 row.userBetAmount = userBet.totalAmount;
                 row.userBetStatus = userBet.status;
             } else {
-                console.log(`📗 else Bets found for user: ${user_name} => `, userBet);
                 row.userHasBet = false;
                 row.userBetTeam = null;
                 row.userBetAmount = null;
@@ -1221,29 +1324,32 @@ const getAllBat = async (req, res) => {
             return row;
         });
 
-        // 4️⃣ Optional filtering
+        // 4️⃣ Apply optional filters
         const filteredData = enrichedData.filter((row) => {
-            let match = true;
-            if (id) match = match && row.id == id;
+            let ok = true;
+
+            if (id) ok = ok && row.id == id;
             if (bodyIsActive === "true" || bodyIsActive === "false")
-                match = match && row.isActive === (bodyIsActive === "true");
+                ok = ok && row.isActive === (bodyIsActive === "true");
             if (bodyIsDelete === "true" || bodyIsDelete === "false")
-                match = match && row.isDelete === (bodyIsDelete === "true");
-            return match;
+                ok = ok && row.isDelete === (bodyIsDelete === "true");
+
+            return ok;
         });
 
-        // 5️⃣ Sort by end time ascending
+        // 5️⃣ Sort by bet end time (soonest first)
         filteredData.sort((a, b) => new Date(a.betEndTime) - new Date(b.betEndTime));
 
-        // 6️⃣ Send Response
+        // 6️⃣ Send result
         return res.status(200).json({
             success: true,
             message: "Fetched bets successfully",
             data: filteredData,
         });
+
     } catch (error) {
         console.error("❌ Error in getAllBat:", error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Error in Get All Bets API",
             error: error.message,
@@ -1292,7 +1398,7 @@ const createAllBets = async (req, res) => {
         const newId = new ObjectId().toString(); // "68f3c188b6ecebf82de1e767"
 
 
-         // ----------- Convert times to UTC ------------
+        // ----------- Convert times to UTC ------------
         // Bet start time (now) in IST → convert to UTC
         const betStartTimeUTC = DateTime.now()
             .setZone("Asia/Kolkata")
@@ -1433,6 +1539,44 @@ const createAllBetsWithImage = async (req, res) => {
     }
 };
 
+const createAllBetsWithImageUpdateStatus = async (req, res) => {
+    try {
+        const { id, isActive } = req.body;
+
+        if (!id || isActive === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: "id and isActive are required",
+            });
+        }
+
+        // SQL Update
+        const [result] = await db.query(
+            "UPDATE allbets SET isActive = ? WHERE id = ?",
+            [isActive, id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No record found with given id",
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: "Status updated successfully",
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message,
+        });
+    }
+};
+
 const createTwoTeamMatch = async (req, res) => {
     try {
         const { Team1, Team2, MatchVenue, Matchwinnertatus, matchimage } = req.body
@@ -1508,4 +1652,9 @@ function getIndianDateTime() {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export { upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser, insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet, createAllBetsWithImage, getBetTransaction, WithdrawalMoney ,GetMatchcompletedstatus,getAllbetgetid}
+export {
+    upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser,
+    insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet,
+    createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
+    getAllbetgetid, createAllBetsWithImageUpdateStatus, createNewBet, getNewBet
+}
