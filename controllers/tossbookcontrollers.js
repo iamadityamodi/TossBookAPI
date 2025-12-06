@@ -638,9 +638,7 @@ const placebet = async (req, res) => {
         const updatedBalance = parseFloat(user[0].tblWalletcol) - amountOfBet;
         const updatedExposure = parseFloat(user[0].exposure) + amountOfBet;
 
-        console.log("updatedBalance", updatedBalance)
-        console.log("updatedExposure", updatedExposure)
-
+    
         await db.query(
             `UPDATE tblwallet SET tblWalletcol = ?, exposure = ? WHERE user_name = ?`,
             [updatedBalance, updatedExposure, userName]
