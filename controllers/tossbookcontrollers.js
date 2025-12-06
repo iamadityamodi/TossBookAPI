@@ -865,8 +865,7 @@ const insert_CoinInWallet = async (req, res) => {
         // 2️⃣ If no rows updated -> insert new row
         if (result.affectedRows === 0) {
 
-            console.log("No existing wallet found → inserting new row");
-
+ 
             await db.query(
                 `INSERT INTO tblWallet 
         (user_id, user_name, tblWalletcol, totalamount)
@@ -1033,105 +1032,6 @@ const loginType = async (req, res) => {
         })
     }
 }
-
-const getNewBet = async (req, res) => {
-    try {
-        const { userTimeZone } = req.body;
-        const zone = userTimeZone || "Asia/Kolkata";
-
-        const [rows] = await db.query("SELECT betEndTimeUTC FROM tblnewbets");
-
-        const final = rows.map(row => {
-            const value = row.betEndTimeUTC; // "2025-12-02 17:35:00"
-
-            const dt = DateTime.fromSQL(value, { zone: "utc" });
-
-            const local = dt.setZone(zone).toFormat("yyyy-MM-dd hh:mm a");
-
-            return {
-                betEndTimeUTC: value,
-                betEndTimeLocal: local
-            };
-        });
-
-        res.json({ success: true, data: final });
-
-    } catch (err) {
-        console.log(err);
-        return res.status(500).json({ success: false, message: "Server error" });
-    }
-}
-
-const createNewBet = async (req, res) => {
-    try {
-
-        const { betEndTimeLocal } = req.body;
-        const userZone = "Asia/Kolkata";
-
-
-        const newId = new ObjectId().toString();
-
-        // Example: "2025-12-02 11:05 PM"
-        const userTime = DateTime.fromFormat(
-            betEndTimeLocal,
-            "yyyy-MM-dd hh:mm a",
-            { zone: userZone }
-        );
-
-        if (!userTime.isValid) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid date",
-                detail: userTime.invalidExplanation
-            });
-        }
-
-        // Convert → UTC → MySQL
-        const mysqlUTC = userTime.toUTC().toFormat("yyyy-MM-dd HH:mm:ss");
-
-        await db.query(
-            "INSERT INTO tblnewbets (id, betEndTimeUTC) VALUES (?, ?)",
-            [newId, mysqlUTC]
-        );
-
-        res.json({ success: true, storedUTC: mysqlUTC });
-
-        // const { betEndTimeLocal, userTimeZone } = req.body;
-
-        // // Example:
-        // // betEndTimeLocal = "2025-12-02 04:05 PM"
-        // // userTimeZone = "Asia/Kolkata"
-
-        // const newId = new ObjectId().toString();
-
-        // const dt = DateTime.fromFormat(
-        //     betEndTimeLocal,
-        //     "yyyy-MM-dd hh:mm a",
-        //     { zone: userTimeZone }
-        // );
-
-        // if (!dt.isValid) {
-        //     console.log(dt.invalidExplanation);
-        //     return res.status(400).json({
-        //         success: false,
-        //         message: "Invalid datetime format",
-        //         detail: dt.invalidExplanation
-        //     });
-        // }
-
-        // // Convert to UTC MySQL DATETIME
-        // const mysqlUTC = dt.toUTC().toFormat("yyyy-MM-dd HH:mm:ss");
-        // await db.query(
-        //     "INSERT INTO tblnewbets (id, betEndTimeUTC) VALUES (?, ?)",
-        //     [newId, mysqlUTC]
-        // );
-
-        // res.json({ success: true, stored: mysqlUTC });
-    } catch (err) {
-        console.log("Error:", err);
-        return res.status(500).json({ success: false, message: err.message, error: err });
-    }
-};
 
 
 
@@ -1655,5 +1555,5 @@ export {
     upload, createUser, loginType, createTwoTeamMatch, createAllBets, getAllUser,
     insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet,
     createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
-    getAllbetgetid, createAllBetsWithImageUpdateStatus, createNewBet, getNewBet
+    getAllbetgetid, createAllBetsWithImageUpdateStatus
 }

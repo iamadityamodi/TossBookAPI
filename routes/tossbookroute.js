@@ -22,9 +22,8 @@ import {
   WithdrawalMoney,
   GetMatchcompletedstatus,
   getAllbetgetid,
-  createAllBetsWithImageUpdateStatus,
-  createNewBet,
-  getNewBet,
+  createAllBetsWithImageUpdateStatus
+  
  } from "../controllers/tossbookcontrollers.js";
 
 const router = express.Router();
@@ -42,10 +41,7 @@ router.post("/betsImage", upload.single("image"), createAllBetsWithImage);
 
 router.post("/betsImageUpdateStatus", createAllBetsWithImageUpdateStatus);
 
-router.post("/createNewBet", createNewBet);
-
-router.post("/getNewBet", getNewBet);
-
+ 
  
 router.post("/getAllBats", getAllBat);
 
