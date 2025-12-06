@@ -1395,8 +1395,7 @@ const createAllBetsWithImage = async (req, res) => {
         const dt = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "Asia/Kolkata" });
         const betStartTime = DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm:ss");
         const betEndTimeNew = formatDateForMySQL(betEndTime);
-        console.log("betEndTimeNew", betEndTimeNew);
-
+ 
         const now = DateTime.now().setZone("Asia/Kolkata");
         const isActive = now <= dt ? 1 : 0;
 
