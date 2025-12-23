@@ -953,7 +953,7 @@ const createUser = async (req, res) => {
         const date = new Date();
 
         // Convert to India time
-        const indiaDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const indiaDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
 
         // Format for MySQL
         const formattedDate = getIndianDateTime();
@@ -1151,7 +1151,7 @@ const getAllBatTest = async (req, res) => {
             isActive: bodyIsActive,
             isDelete: bodyIsDelete,
             user_name,
-            timezone = "Asia/Kolkata" // user timezone
+            timezone = "America/New_York" // user timezone
         } = req.body;
 
         // Ensure DB works in UTC
@@ -1208,7 +1208,7 @@ const getAllBatTest = async (req, res) => {
 
 const getFutureEvents = async (req, res) => {
     try {
-        const { timezone = "Asia/Kolkata" } = req.body;
+        const { timezone = "America/New_York" } = req.body;
 
         // Fetch future events (UTC comparison)
         const [rows] = await db.query(`
@@ -1245,7 +1245,7 @@ const getEventWorldTime = async (req, res) => {
         const { timezone } = req.body;
 
         // User display timezone
-        // const timezone = req.query.timezone || "Asia/Kolkata";
+        // const timezone = req.query.timezone || "America/New_York";
 
         const [rows] = await db.query(`SELECT * FROM tblevents`);
 
@@ -1306,7 +1306,7 @@ const createEventNew = async (req, res) => {
 
 const createEvent = async (req, res) => {
     try {
-        const { title, eventTime, timezone = "Asia/Kolkata" } = req.body;
+        const { title, eventTime, timezone = "America/New_York" } = req.body;
 
         // Convert user time → UTC
         const utcTime = moment
@@ -1332,12 +1332,129 @@ const createEvent = async (req, res) => {
 };
 
 
+const getAllBat2 = async (req, res) => {
+    try {
+        const { id, user_name } = req.body;
+
+        // 🌍 User timezone for display
+        const timezone = req.headers["x-timezone"] || "America/New_York";
+
+        // 1️⃣ Build SQL query for future bets (UTC-safe)
+        let sql = `
+      SELECT *
+      FROM allbets
+      WHERE (isDelete IS NULL OR isDelete = 0)
+        AND betEndTime IS NOT NULL
+        AND betEndTime > UTC_TIMESTAMP()
+    `;
+        const params = [];
+
+        if (id) {
+            sql += " AND id = ?";
+            params.push(id);
+        }
+
+        sql += " ORDER BY betEndTime ASC";
+
+        const [rows] = await db.query(sql, params);
+
+        // 2️⃣ Optional: fetch user bets
+        const userBets = {};
+        if (user_name) {
+            const [userBetData] = await db.query(
+                `SELECT betId, batteamname, amountOfBat, batStatus
+         FROM tblbattranscation
+         WHERE LOWER(user_name) = LOWER(?)`,
+                [user_name]
+            );
+
+            for (const bet of userBetData) {
+                const betId = bet.betId?.toString().trim();
+                if (!betId) continue;
+
+                if (!userBets[betId]) {
+                    userBets[betId] = {
+                        totalAmount: 0,
+                        teamName: bet.batteamname,
+                        status: bet.batStatus
+                    };
+                }
+
+                userBets[betId].totalAmount += Number(bet.amountOfBat) || 0;
+            }
+        }
+
+        // 3️⃣ Convert UTC → User timezone safely
+        const data = rows.map(row => {
+            let betStartUTC, betEndUTC;
+
+            if (row.betStartTime instanceof Date) {
+                betStartUTC = DateTime.fromJSDate(row.betStartTime, { zone: "utc" });
+            } else {
+                betStartUTC = DateTime.fromSQL(row.betStartTime, { zone: "utc" });
+            }
+
+            if (row.betEndTime instanceof Date) {
+                betEndUTC = DateTime.fromJSDate(row.betEndTime, { zone: "utc" });
+            } else {
+                betEndUTC = DateTime.fromSQL(row.betEndTime, { zone: "utc" });
+            }
+
+            return {
+                id: row.id,
+                teamAName: row.teamAName,
+                teamBName: row.teamBName,
+                leagueName: row.leagueName,
+                sportType: row.sportType,
+
+                // UTC times (for countdown / logic)
+                // ISO string in UTC (Z format, uses T separator)
+                betStartTime: row.betStartTime instanceof Date
+                    ? row.betStartTime.toISOString()
+                    : new Date(row.betStartTime).toISOString(),
+
+                betEndTime: row.betEndTime instanceof Date
+                    ? row.betEndTime.toISOString()
+                    : new Date(row.betEndTime).toISOString(),
+
+
+
+                tossRate: row.tossRate,
+                imageUrl: row.imageUrl,
+
+                userHasBet: !!userBets[row.id],
+                userBetTeam: userBets[row.id]?.teamName || null,
+                userBetAmount: userBets[row.id]?.totalAmount || null,
+                userBetStatus: userBets[row.id]?.status || null
+            };
+        });
+
+        // 4️⃣ Send response
+        return res.json({
+            success: true,
+            timezone,
+            currentTimeUTC: DateTime.utc().toISO(),
+            data
+        });
+
+    } catch (error) {
+        console.error("❌ getAllBat:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+
+};
+
+
 const getAllBat = async (req, res) => {
     try {
         const { id, user_name } = req.body;
 
         // 🌍 User timezone for display
-        const timezone = req.headers["x-timezone"] || "Asia/Kolkata";
+        const timezone = req.headers["x-timezone"] || "America/New_York";
 
         // 1️⃣ Build SQL query for future bets (UTC-safe)
         let sql = `
@@ -1453,8 +1570,8 @@ const getEvent = async (req, res) => {
     try {
         const { id, user_name } = req.body;
 
-        // 1️⃣ User timezone (default to Asia/Kolkata)
-        const timezone = req.headers["x-timezone"] || "Asia/Kolkata";
+        // 1️⃣ User timezone (default to America/New_York)
+        const timezone = req.headers["x-timezone"] || "America/New_York";
 
         // 2️⃣ Fetch ONLY FUTURE bets
         let sql = `
@@ -1613,18 +1730,18 @@ const createAllBets = async (req, res) => {
         // ----------- Convert times to UTC ------------
         // Bet start time (now) in IST → convert to UTC
         const betStartTimeUTC = DateTime.now()
-            .setZone("Asia/Kolkata")
+            .setZone("America/New_York")
             .toUTC()
             .toFormat("yyyy-MM-dd HH:mm:ss");
 
         // Bet end time from frontend (IST) → convert to UTC
-        const betEndTimeUTC = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "Asia/Kolkata" })
+        const betEndTimeUTC = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "America/New_York" })
             .toUTC()
             .toFormat("yyyy-MM-dd HH:mm:ss");
 
         // ----------- Check if bet is active (current IST time <= betEndTime) ------------
-        const nowIST = DateTime.now().setZone("Asia/Kolkata");
-        const betEndIST = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "Asia/Kolkata" });
+        const nowIST = DateTime.now().setZone("America/New_York");
+        const betEndIST = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: "America/New_York" });
         const isActive = nowIST <= betEndIST ? 1 : 0;
 
 
@@ -1700,7 +1817,7 @@ const createAllBetsWithImage = async (req, res) => {
             return res.status(400).json({ success: false, message: "All fields are required" });
         }
 
-        const zone = userZone || "Asia/Kolkata";
+        const zone = userZone || "America/New_York";
 
         // const dtUser = DateTime.fromFormat(betEndTime, "yyyy-MM-dd HH:mm:ss", { zone: userZone });
 
@@ -1884,7 +2001,7 @@ function getIndianDateTime() {
     const now = new Date();
 
     // Convert to India time zone
-    const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
 
     // Format: YYYY-MM-DD HH:mm:ss
     const year = indiaTime.getFullYear();
@@ -1902,5 +2019,5 @@ export {
     insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet,
     createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
     getAllbetgetid, createAllBetsWithImageUpdateStatus, getAllBatTest, addEvent, getEvent,
-    createEvent, getFutureEvents, createEventNew, getEventWorldTime
+    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2
 }

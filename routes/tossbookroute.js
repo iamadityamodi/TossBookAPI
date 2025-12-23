@@ -29,7 +29,8 @@ import {
   createEvent,
   getFutureEvents,
   createEventNew,
-  getEventWorldTime
+  getEventWorldTime,
+  getAllBat2
   
  } from "../controllers/tossbookcontrollers.js";
 
@@ -51,6 +52,7 @@ router.post("/betsImageUpdateStatus", createAllBetsWithImageUpdateStatus);
  
  
 router.post("/getAllBats", getAllBat);
+router.post("/getAllBat2", getAllBat2);
 
 router.post("/createEvent",createEvent);
 
