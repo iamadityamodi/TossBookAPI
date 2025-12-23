@@ -22,7 +22,14 @@ import {
   WithdrawalMoney,
   GetMatchcompletedstatus,
   getAllbetgetid,
-  createAllBetsWithImageUpdateStatus
+  createAllBetsWithImageUpdateStatus,
+  getAllBatTest,
+  addEvent,
+  getEvent,
+  createEvent,
+  getFutureEvents,
+  createEventNew,
+  getEventWorldTime
   
  } from "../controllers/tossbookcontrollers.js";
 
@@ -45,9 +52,22 @@ router.post("/betsImageUpdateStatus", createAllBetsWithImageUpdateStatus);
  
 router.post("/getAllBats", getAllBat);
 
+router.post("/createEvent",createEvent);
+
+router.post("/createEventNew",createEventNew);
+router.post("/getEventWorldTime",getEventWorldTime );
+
+router.post("/getFutureEvents",getFutureEvents);
+
+router.post("/getAllBatsTest", getAllBatTest);
+
 router.get("/getAllUser", getAllUser);
 
 router.post("/getAllbetgetid", getAllbetgetid);
+
+router.post("/addEvent", addEvent);
+
+router.post("/getEvent", getEvent);
 
 
 
