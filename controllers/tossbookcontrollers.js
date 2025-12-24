@@ -190,7 +190,7 @@ const getAllUser = async (req, res) => {
 
         res.status(200).send({
             success: true,
-            message: 'Success.',
+            message: 'All Get User Success.',
             data: data,
         })
     } catch (error) {
