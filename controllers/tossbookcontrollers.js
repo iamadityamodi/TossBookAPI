@@ -862,7 +862,7 @@ const insert_CoinInWallet = async (req, res) => {
 
         // 1️⃣ Try update
         const [result] = await db.query(
-            `UPDATE tblWallet 
+            `UPDATE tblwallet 
      SET tblWalletcol = tblWalletcol + ?, totalamount = totalamount + ? 
      WHERE user_id = ?`,
             [coins, coins, user_id]
