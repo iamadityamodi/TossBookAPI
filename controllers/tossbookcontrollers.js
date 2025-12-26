@@ -888,7 +888,7 @@ const insert_CoinInWallet = async (req, res) => {
 
         res.json({
             success: true,
-            message: "Coins added successfully",
+            message: "Coins added successfully.",
             data: rows[0]
         });
 
