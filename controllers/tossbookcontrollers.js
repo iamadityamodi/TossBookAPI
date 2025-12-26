@@ -596,7 +596,7 @@ const placebet = async (req, res) => {
 
         // 🧩 3️⃣ Fetch bet details from `allbets`
         const [betData] = await db.query(
-            `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime  FROM allbets WHERE id = ?`,
+            `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive  FROM allbets WHERE id = ?`,
             [betId]
         );
 
@@ -604,10 +604,18 @@ const placebet = async (req, res) => {
             return res.status(404).json({ success: false, message: "Bet not found" });
         }
 
-        const { leagueName, teamAName, teamBName, tossRate, betEndTime } = betData[0];
+        const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
+
+         if (!isActive) {
+            return res.status(400).json({
+                success: false,
+                message: "Bet is not active"
+            });
+        }
 
         const now = new Date();
         const endTime = new Date(betEndTime);
+
 
         if (now > endTime) {
             return res.status(400).json({
@@ -1448,10 +1456,68 @@ const getAllBat2 = async (req, res) => {
 
 };
 
+const updateBetStatus = async (req, res) => {
+    try {
+        const { id, isActive } = req.body;
+
+        // ❌ Validation
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                message: "Bet ID is required"
+            });
+        }
+
+        if (typeof isActive !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "isActive must be true or false"
+            });
+        }
+
+        // ✅ Update query
+        const [result] = await db.query(
+            `
+            UPDATE allbets
+            SET isActive = ?
+            WHERE id = ?
+              AND (isDelete IS NULL OR isDelete = 0)
+            `,
+            [isActive ? 1 : 0, id]
+        );
+
+        // ❌ No row updated
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Bet not found or already deleted"
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: `Bet is now ${isActive ? "ACTIVE" : "INACTIVE"}`,
+            data: {
+                id,
+                isActive
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ updateBetStatus:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+};
+
+
 
 const getAllBat = async (req, res) => {
     try {
-        const { id, user_name } = req.body;
+        const { id, user_name, isActive } = req.body;
 
         // 🌍 User timezone for display
         const timezone = req.headers["x-timezone"] || "America/New_York";
@@ -1469,6 +1535,12 @@ const getAllBat = async (req, res) => {
         if (id) {
             sql += " AND id = ?";
             params.push(id);
+        }
+
+        // ✅ FIXED: Active / Inactive filter
+        if (typeof isActive === "boolean") {
+            sql += " AND isActive = ?";
+            params.push(isActive ? 1 : 0);
         }
 
         sql += " ORDER BY betEndTime ASC";
@@ -1523,6 +1595,7 @@ const getAllBat = async (req, res) => {
                 teamBName: row.teamBName,
                 leagueName: row.leagueName,
                 sportType: row.sportType,
+                isActive: !!row.isActive,
 
                 // UTC times (for countdown / logic)
                 // ISO string in UTC (Z format, uses T separator)
@@ -1842,7 +1915,10 @@ const createAllBetsWithImage = async (req, res) => {
         console.log("Bet End (UTC):", betEndUTC);     // user-selected time converted to UTC
 
         // Handle image upload
-        const imageUrl = req.file ? `/upload/allbetimages/${req.file.filename}` : null;
+        let imageUrl = null;
+        if (req.file) {
+            imageUrl = `/upload/allbetimages/${req.file.filename}`;
+        }
 
         const newId = new ObjectId().toString();
 
@@ -2019,5 +2095,5 @@ export {
     insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet,
     createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
     getAllbetgetid, createAllBetsWithImageUpdateStatus, getAllBatTest, addEvent, getEvent,
-    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2
+    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2, updateBetStatus
 }
