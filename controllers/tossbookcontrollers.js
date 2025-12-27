@@ -606,7 +606,7 @@ const placebet = async (req, res) => {
 
         const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
 
-         if (!isActive) {
+        if (!isActive) {
             return res.status(400).json({
                 success: false,
                 message: "Bet is not active"
@@ -1516,125 +1516,110 @@ const updateBetStatus = async (req, res) => {
 
 
 const getAllBat = async (req, res) => {
-    try {
-        const { id, user_name, isActive } = req.body;
+   try {
+    const { id, user_name, isActive, userZone } = req.body;
 
-        // 🌍 User timezone for display
-        const timezone = req.headers["x-timezone"] || "America/New_York";
+    // ✅ Timezone from BODY (NOT server)
+    const timezone = userZone || "Asia/Kolkata";
 
-        // 1️⃣ Build SQL query for future bets (UTC-safe)
-        let sql = `
+    // 1️⃣ SQL (UTC safe comparison)
+    let sql = `
       SELECT *
       FROM allbets
       WHERE (isDelete IS NULL OR isDelete = 0)
         AND betEndTime IS NOT NULL
         AND betEndTime > UTC_TIMESTAMP()
     `;
-        const params = [];
+    const params = [];
 
-        if (id) {
-            sql += " AND id = ?";
-            params.push(id);
-        }
+    if (id) {
+      sql += " AND id = ?";
+      params.push(id);
+    }
 
-        // ✅ FIXED: Active / Inactive filter
-        if (typeof isActive === "boolean") {
-            sql += " AND isActive = ?";
-            params.push(isActive ? 1 : 0);
-        }
+    if (typeof isActive === "boolean") {
+      sql += " AND isActive = ?";
+      params.push(isActive ? 1 : 0);
+    }
 
-        sql += " ORDER BY betEndTime ASC";
+    sql += " ORDER BY betEndTime ASC";
 
-        const [rows] = await db.query(sql, params);
+    const [rows] = await db.query(sql, params);
 
-        // 2️⃣ Optional: fetch user bets
-        const userBets = {};
-        if (user_name) {
-            const [userBetData] = await db.query(
-                `SELECT betId, batteamname, amountOfBat, batStatus
+    // 2️⃣ User bets (optional)
+    const userBets = {};
+    if (user_name) {
+      const [bets] = await db.query(
+        `SELECT betId, batteamname, amountOfBat, batStatus
          FROM tblbattranscation
          WHERE LOWER(user_name) = LOWER(?)`,
-                [user_name]
-            );
+        [user_name]
+      );
 
-            for (const bet of userBetData) {
-                const betId = bet.betId?.toString().trim();
-                if (!betId) continue;
+      for (const b of bets) {
+        const betId = b.betId?.toString();
+        if (!betId) continue;
 
-                if (!userBets[betId]) {
-                    userBets[betId] = {
-                        totalAmount: 0,
-                        teamName: bet.batteamname,
-                        status: bet.batStatus
-                    };
-                }
-
-                userBets[betId].totalAmount += Number(bet.amountOfBat) || 0;
-            }
+        if (!userBets[betId]) {
+          userBets[betId] = {
+            totalAmount: 0,
+            teamName: b.batteamname,
+            status: b.batStatus
+          };
         }
 
-        // 3️⃣ Convert UTC → User timezone safely
-        const data = rows.map(row => {
-            let betStartUTC, betEndUTC;
-
-            if (row.betStartTime instanceof Date) {
-                betStartUTC = DateTime.fromJSDate(row.betStartTime, { zone: "utc" });
-            } else {
-                betStartUTC = DateTime.fromSQL(row.betStartTime, { zone: "utc" });
-            }
-
-            if (row.betEndTime instanceof Date) {
-                betEndUTC = DateTime.fromJSDate(row.betEndTime, { zone: "utc" });
-            } else {
-                betEndUTC = DateTime.fromSQL(row.betEndTime, { zone: "utc" });
-            }
-
-            return {
-                id: row.id,
-                teamAName: row.teamAName,
-                teamBName: row.teamBName,
-                leagueName: row.leagueName,
-                sportType: row.sportType,
-                isActive: !!row.isActive,
-
-                // UTC times (for countdown / logic)
-                // ISO string in UTC (Z format, uses T separator)
-                betStartTime: row.betStartTime instanceof Date
-                    ? row.betStartTime.toISOString()
-                    : new Date(row.betStartTime).toISOString(),
-
-                betEndTime: row.betEndTime instanceof Date
-                    ? row.betEndTime.toISOString()
-                    : new Date(row.betEndTime).toISOString(),
-
-
-
-                tossRate: row.tossRate,
-                imageUrl: row.imageUrl,
-
-                userHasBet: !!userBets[row.id],
-                userBetTeam: userBets[row.id]?.teamName || null,
-                userBetAmount: userBets[row.id]?.totalAmount || null,
-                userBetStatus: userBets[row.id]?.status || null
-            };
-        });
-
-        // 4️⃣ Send response
-        return res.json({
-            success: true,
-            timezone,
-            currentTimeUTC: DateTime.utc().toISO(),
-            data
-        });
-
-    } catch (error) {
-        console.error("❌ getAllBat:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Server error",
-            error: error.message
-        });
+        userBets[betId].totalAmount += Number(b.amountOfBat || 0);
+      }
     }
+
+    // 3️⃣ UTC → USER TIMEZONE (DISPLAY ONLY)
+    const data = rows.map(row => {
+      const betStartUTC = DateTime.fromJSDate(row.betStartTime, { zone: "utc" });
+      const betEndUTC   = DateTime.fromJSDate(row.betEndTime, { zone: "utc" });
+
+      return {
+        id: row.id,
+        teamAName: row.teamAName,
+        teamBName: row.teamBName,
+        leagueName: row.leagueName,
+        sportType: row.sportType,
+        isActive: !!row.isActive,
+
+        // 🔥 UTC (for countdown / logic)
+        betStartTimeUTC: betStartUTC.toISO(),
+        betEndTimeUTC: betEndUTC.toISO(),
+
+        // 🌍 User timezone display
+        betStartTime: betStartUTC.setZone(timezone)
+          .toFormat("yyyy-MM-dd HH:mm:ss"),
+        betEndTime: betEndUTC.setZone(timezone)
+          .toFormat("yyyy-MM-dd HH:mm:ss"),
+
+        tossRate: row.tossRate,
+        imageUrl: row.imageUrl,
+
+        userHasBet: !!userBets[row.id],
+        userBetTeam: userBets[row.id]?.teamName || null,
+        userBetAmount: userBets[row.id]?.totalAmount || null,
+        userBetStatus: userBets[row.id]?.status || null
+      };
+    });
+
+    return res.json({
+      success: true,
+      timezone,
+      serverTimeUTC: DateTime.utc().toISO(),
+      data
+    });
+
+  } catch (err) {
+    console.error("❌ getAllBat error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
 
 };
 
