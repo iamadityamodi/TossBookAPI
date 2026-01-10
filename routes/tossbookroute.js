@@ -46,7 +46,7 @@ router.post("/loginType", loginType);
 
 router.post("/bets", createAllBets);
 
-router.post("/betsImage", upload.single("image"), createAllBetsWithImage);
+router.post("/InsertBets", upload.single("image"), createAllBetsWithImage);
 
 router.post("/betsImageUpdateStatus", createAllBetsWithImageUpdateStatus);
 
