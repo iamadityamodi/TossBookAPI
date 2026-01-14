@@ -190,7 +190,7 @@ const getAllUser = async (req, res) => {
 
         res.status(200).send({
             success: true,
-            message: 'All Get User Success.',
+            message: 'Success.',
             data: data,
         })
     } catch (error) {
@@ -341,6 +341,13 @@ const winningStatsuUpdate = async (req, res) => {
                     );
                 }
             }
+
+            
+
+            await db.query(
+                "UPDATE tblallbetgetid SET Status = 'cancelled' WHERE id = ?",
+                [betId]
+            );
 
             return res.status(200).send({
                 success: true,
