@@ -31,7 +31,8 @@ import {
   createEventNew,
   getEventWorldTime,
   getAllBat2,
-  updateBetStatus
+  updateBetStatus,
+  closeBetTransaction
   
  } from "../controllers/tossbookcontrollers.js";
 
@@ -46,12 +47,11 @@ router.post("/loginType", loginType);
 
 router.post("/bets", createAllBets);
 
-router.post("/InsertBets", upload.single("image"), createAllBetsWithImage);
+router.post("/InsertBets", upload.single("image"), createAllBetsWithImage)
+
 
 router.post("/betsImageUpdateStatus", createAllBetsWithImageUpdateStatus);
 
- 
- 
 router.post("/getAllBats", getAllBat);
 router.post("/updateBetStatus", updateBetStatus);
 router.post("/getAllBat2", getAllBat2);
@@ -76,6 +76,8 @@ router.post("/getEvent", getEvent);
 
 
 router.post("/getBetTransaction", getBetTransaction);
+
+router.post("/closeBetTransaction", closeBetTransaction);
 
 router.post("/insertCointInWallet", insert_CoinInWallet);
 
