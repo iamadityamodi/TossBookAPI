@@ -301,27 +301,72 @@ const closeBetTransaction = async (req, res) => {
             [betId]
         );
 
-        //  const [getWalletCoin] = await db.query(
-        //     "SELECT tblWalletcol FROM tblwallet WHERE user_name = ?",
-        //     [user_name]
+
+        //  const [betData] = await db.query(
+        //     `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive  FROM allbets WHERE id = ?`,
+        //     [betId]
         // );
 
-        // const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
-        // const mergedTeamName = `Cancelled on ${leagueName} ${teamAName} VS ${teamBName}`;
+        // if (betData.length === 0) {
+        //     return res.status(404).json({ success: false, message: "Bet not found" });
+        // }
+
+        // const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
+
+        // const mergedTeamName = `Bet on ${leagueName} ${teamAName} VS ${teamBName}`;
 
         // await db.query(
         //     `INSERT INTO tblpassbook 
         // (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
         // VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         //     [new ObjectId().toString(),
-        //     user_name,
+        //         user_name,
         //         mergedTeamName,
         //         "credit",
-        //         totalRefund,
+        //         amountOfBet,
         //     getWalletCoin[0].tblWalletcol,
         //         betTeamName,
         //         betStartUTC]
         // );
+
+
+
+
+        //Get Waller balance
+        const [getWalletCoin] = await db.query(
+            "SELECT tblWalletcol FROM tblwallet WHERE user_name = ?",
+            [user_name]
+        );
+
+        // Time Current
+        const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
+
+
+        /// Get Bet Data
+        const [betData] = await db.query(
+            `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive  FROM allbets WHERE id = ?`,
+            [betId]
+        );
+
+        if (betData.length === 0) {
+            return res.status(404).json({ success: false, message: "Bet not found" });
+        }
+        const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
+        const mergedTeamName = `Cancelled Bet on ${leagueName} ${teamAName} VS ${teamBName}`;
+
+        await db.query(
+            `INSERT INTO tblpassbook 
+        (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [new ObjectId().toString(),
+                user_name,
+                mergedTeamName,
+                "credit",
+                totalRefund,
+            getWalletCoin[0].tblWalletcol,
+                "",
+                betStartUTC]
+        );
 
 
 
@@ -548,7 +593,7 @@ const winningStatsuUpdate = async (req, res) => {
 
         // ================= GET WINNERS =================
         const [winners] = await connection.query(
-            `SELECT user_name, amountOfBat, tossRate
+            `SELECT user_name, leagueName, teamAname, teamBname, amountOfBat, tossRate
              FROM tblbattranscation
              WHERE betId = ?
              AND batteamname = ?
@@ -558,7 +603,7 @@ const winningStatsuUpdate = async (req, res) => {
 
         // ================= GET LOSERS =================
         const [losers] = await connection.query(
-            `SELECT user_name, amountOfBat
+            `SELECT user_name, leagueName, teamAname, teamBname, amountOfBat
              FROM tblbattranscation
              WHERE betId = ?
              AND batteamname != ?
@@ -573,6 +618,7 @@ const winningStatsuUpdate = async (req, res) => {
         for (const winner of winners) {
 
             const userName = winner.user_name.trim();
+            console.log(winner.leagueName + " " + userName);
             const amount = parseFloat(winner.amountOfBat);
             const rate = parseFloat(winner.tossRate);
 
@@ -601,6 +647,36 @@ const winningStatsuUpdate = async (req, res) => {
                      WHERE user_name = ?`,
                     [newBal, newExp, userName]
                 );
+
+
+
+                // Time Current
+                const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
+
+                console.log("winner " + winner.leagueName);
+
+                const leagueName = winner.leagueName.trim();
+                const teamAname = winner.teamAname.trim();
+                const teamBname = winner.teamBname.trim();
+
+
+                const mergedTeamName = `Win bet on ${leagueName} ${teamAname} VS ${teamBname}`;
+
+                await db.query(
+                    `INSERT INTO tblpassbook 
+        (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [new ObjectId().toString(),
+                        userName,
+                        mergedTeamName,
+                        "credit",
+                        winAmount,
+                        newBal,
+                    winner.batteamname,
+                        betStartUTC]
+                );
+
+
 
             } else {
 
@@ -683,6 +759,7 @@ const winningStatsuUpdate = async (req, res) => {
                 match[0].leagueName
             ]
         );
+
 
         // ================= COMMIT =================
         await connection.commit();
@@ -898,7 +975,7 @@ const placebet = async (req, res) => {
         console.log(error)
         res.status(500).send({
             success: false,
-            message: 'Error in add coin API',
+            message: 'Error in place bat API',
             error
         })
     }
@@ -1281,6 +1358,36 @@ const createUser = async (req, res) => {
         res.status(500).send({
             success: false,
             message: 'Error in create student API',
+            error
+        })
+    }
+}
+
+const getloginType = async (req, res) => {
+    try {
+
+        const [data] = await db.query(" SELECT * FROM tbllogintype")
+
+        // data will always be an array, so check its length
+        if (data.length === 0) {
+            return res.status(404).send({
+                success: false,
+                message: 'No Login Type Available',
+                data: []
+            });
+        }
+
+
+        res.status(200).send({
+            success: true,
+            message: 'Success.',
+            data: data,
+        })
+    } catch (error) {
+        console.log(error)
+        res.status(500).send({
+            success: false,
+            message: 'Error in Get All Student API',
             error
         })
     }
@@ -2129,7 +2236,8 @@ const storage = multer.diskStorage({
         cb(null, "upload/allbetimages/");
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + "-" + file.originalname);
+        const cleanName = file.originalname.replace(/\s+/g, "_");
+        cb(null, Date.now() + "-" + cleanName);
     },
 });
 
@@ -2209,7 +2317,13 @@ const createAllBetsWithImage = async (req, res) => {
         // 🖼 Image upload
         let imageUrl = null;
         if (req.file) {
-            imageUrl = `${req.file.filename}`;
+
+            const cleanName = req.file.filename.replace(/\s+/g, "_");
+
+            console.log("req.file.filename", req.file.filename);
+            console.log("req.file.filename cleanName ", cleanName);
+
+            imageUrl = `${cleanName}`;
         }
 
         const newId = new ObjectId().toString();
@@ -2393,5 +2507,5 @@ export {
     insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet,
     createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
     getAllbetgetid, createAllBetsWithImageUpdateStatus, getAllBatTest, addEvent, getEvent,
-    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2, updateBetStatus, closeBetTransaction
+    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2, updateBetStatus, closeBetTransaction, getloginType
 }

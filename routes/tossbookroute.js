@@ -32,7 +32,8 @@ import {
   getEventWorldTime,
   getAllBat2,
   updateBetStatus,
-  closeBetTransaction
+  closeBetTransaction,
+  getloginType
   
  } from "../controllers/tossbookcontrollers.js";
 
@@ -44,6 +45,10 @@ router.post("/createuser", createUser);
 router.post("/login", login);
 
 router.post("/loginType", loginType);
+
+router.post("/getloginType", getloginType)
+
+
 
 router.post("/bets", createAllBets);
 
