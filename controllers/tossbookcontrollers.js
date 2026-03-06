@@ -501,6 +501,14 @@ const winningStatsuUpdate = async (req, res) => {
         // ================= MATCH CANCEL CASE =================
         if (winnerTeam.toLowerCase() === "cancel") {
 
+            // Get pending bets
+            const [allBets] = await connection.query(
+                `SELECT user_name, amountOfBat 
+                 FROM tblbattranscation 
+                 WHERE betId = ? AND batStatus = 'pending'`,
+                [betId]
+            );
+
             // Update status
             await connection.query(
                 `UPDATE tblbattranscation 
@@ -509,13 +517,7 @@ const winningStatsuUpdate = async (req, res) => {
                 [betId]
             );
 
-            // Get pending bets
-            const [allBets] = await connection.query(
-                `SELECT user_name, amountOfBat 
-                 FROM tblbattranscation 
-                 WHERE betId = ? AND batStatus = 'cancelled'`,
-                [betId]
-            );
+            
 
             let totalRefund = 0;
 
@@ -2240,6 +2242,16 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + "-" + cleanName);
     },
 });
+
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, path.join(__dirname, "upload/allbetimages"));
+//   },
+//   filename: (req, file, cb) => {
+//     const cleanName = file.originalname.replace(/\s+/g, "_");
+//     cb(null, Date.now() + "-" + cleanName);
+//   },
+// });
 
 // Only image files allowed
 const fileFilter = (req, file, cb) => {
