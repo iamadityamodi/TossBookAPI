@@ -2238,8 +2238,8 @@ const storage = multer.diskStorage({
         cb(null, "upload/allbetimages/");
     },
     filename: (req, file, cb) => {
-        const cleanName = file.originalname.replace(/\s+/g, "_");
-        cb(null, Date.now() + "-" + cleanName);
+        const cleanName = file.originalname.replace(/[^a-zA-Z0-9.]/g, "");
+        cb(null, Date.now() + "_" + cleanName);
     },
 });
 
