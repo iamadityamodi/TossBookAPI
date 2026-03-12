@@ -4,7 +4,9 @@ import path from "path";
 import { DateTime } from "luxon";
 import { ObjectId } from "bson";
 import moment from "moment-timezone";
-import { log } from "console";
+import axios from "axios";
+import FormData from "form-data";
+import fs from "fs";
 
 
 const login = async (req, res) => {
@@ -207,170 +209,140 @@ const getAllUser = async (req, res) => {
 
 
 const closeBetTransaction = async (req, res) => {
+
     try {
+
         const { betId, user_name } = req.body;
 
         if (!betId || !user_name) {
             return res.status(400).json({
                 success: false,
-                message: "betId and user_name are required"
+                message: "betId and user_name required"
             });
         }
 
-        // 1️⃣ Get ALL PENDING bets for this user & betId
-        const [betRows] = await db.query(
-            `
-      SELECT amountOfBat
-      FROM tblbattranscation
-      WHERE betId = ?
-        AND user_name = ?
-        AND batStatus = 'pending'
-      `,
+        //// GET PENDING BETS
+        const [bets] = await db.query(
+            `SELECT walletUsed, bonusUsed, amountOfBat
+FROM tblbattranscation
+WHERE betId = ?
+AND user_name = ?
+AND batStatus='pending'`,
             [betId, user_name]
         );
 
-        // ❌ No pending bets → nothing to cancel
-        if (betRows.length === 0) {
+        if (bets.length === 0) {
             return res.json({
                 success: false,
                 message: "No pending bet found to cancel"
             });
         }
 
-        // 2️⃣ Calculate TOTAL refund amount
-        const totalRefund = betRows.reduce(
-            (sum, row) => sum + Number(row.amountOfBat || 0),
-            0
-        );
+        //// CALCULATE REFUND
+        let walletRefund = 0;
+        let bonusRefund = 0;
 
-        // 3️⃣ Cancel ALL pending bets
+        bets.forEach(bet => {
+            walletRefund += Number(bet.walletUsed || 0);
+            bonusRefund += Number(bet.bonusUsed || 0);
+        });
+
+        const totalRefund = walletRefund + bonusRefund;
+
+        //// CANCEL BET
         await db.query(
-            `
-      UPDATE tblbattranscation
-      SET batStatus = 'cancelled'
-      WHERE betId = ?
-        AND user_name = ?
-        AND batStatus = 'pending'
-      `,
+            `UPDATE tblbattranscation
+SET batStatus='cancelled'
+WHERE betId=?
+AND user_name=?
+AND batStatus='pending'`,
             [betId, user_name]
         );
 
-        // 4️⃣ Update wallet
+        //// GET WALLET
         const [walletRows] = await db.query(
-            `SELECT tblWalletcol, exposure FROM tblwallet WHERE user_name = ?`,
+            `SELECT tblWalletcol,bonus,exposure
+FROM tblwallet
+WHERE user_name=?`,
             [user_name]
         );
 
-        if (walletRows.length > 0) {
-            const wallet = walletRows[0];
-
-            const updatedBalance =
-                Number(wallet.tblWalletcol) + totalRefund;
-
-            const updatedExposure =
-                Math.max(0, Number(wallet.exposure) - totalRefund);
-
-            await db.query(
-                `
-        UPDATE tblwallet
-        SET tblWalletcol = ?, exposure = ?
-        WHERE user_name = ?
-        `,
-                [updatedBalance, updatedExposure, user_name]
-            );
-        } else {
-            // Wallet not exists → create
-            await db.query(
-                `
-        INSERT INTO tblwallet (user_name, tblWalletcol, exposure)
-        VALUES (?, ?, ?)
-        `,
-                [user_name, totalRefund, 0]
-            );
+        if (walletRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Wallet not found"
+            });
         }
 
-        // 5️⃣ Reset allbets (optional, depends on your design)
+        const wallet = walletRows[0];
+
+        const newWallet =
+            Number(wallet.tblWalletcol) + walletRefund;
+
+        const newBonus =
+            Number(wallet.bonus || 0) + bonusRefund;
+
+        const newExposure =
+            Math.max(0, Number(wallet.exposure) - totalRefund);
+
+        //// UPDATE WALLET
         await db.query(
-            `
-      UPDATE allbets
-      SET hasBet = 0,
-          betAmount = 0,
-          betTeamName = NULL
-      WHERE id = ?
-      `,
-            [betId]
+            `UPDATE tblwallet
+SET tblWalletcol=?,bonus=?,exposure=?
+WHERE user_name=?`,
+            [
+                newWallet,
+                newBonus,
+                newExposure,
+                user_name
+            ]
         );
 
-
-        //  const [betData] = await db.query(
-        //     `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive  FROM allbets WHERE id = ?`,
-        //     [betId]
-        // );
-
-        // if (betData.length === 0) {
-        //     return res.status(404).json({ success: false, message: "Bet not found" });
-        // }
-
-        // const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
-
-        // const mergedTeamName = `Bet on ${leagueName} ${teamAName} VS ${teamBName}`;
-
-        // await db.query(
-        //     `INSERT INTO tblpassbook 
-        // (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
-        // VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        //     [new ObjectId().toString(),
-        //         user_name,
-        //         mergedTeamName,
-        //         "credit",
-        //         amountOfBet,
-        //     getWalletCoin[0].tblWalletcol,
-        //         betTeamName,
-        //         betStartUTC]
-        // );
-
-
-
-
-        //Get Waller balance
-        const [getWalletCoin] = await db.query(
-            "SELECT tblWalletcol FROM tblwallet WHERE user_name = ?",
+        //// GET BALANCE
+        const [walletBalance] = await db.query(
+            "SELECT tblWalletcol FROM tblwallet WHERE user_name=?",
             [user_name]
         );
 
-        // Time Current
-        const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
+        //// PASSBOOK ENTRY
+        const betTime = DateTime.utc().toSQL({ includeOffset: false });
 
-
-        /// Get Bet Data
         const [betData] = await db.query(
-            `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive  FROM allbets WHERE id = ?`,
+            `SELECT leagueName,teamAName,teamBName
+FROM allbets WHERE id=?`,
             [betId]
         );
 
-        if (betData.length === 0) {
-            return res.status(404).json({ success: false, message: "Bet not found" });
-        }
-        const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
-        const mergedTeamName = `Cancelled Bet on ${leagueName} ${teamAName} VS ${teamBName}`;
+        const mergedTeamName =
+            `Cancelled Bet on ${betData[0].leagueName} ${betData[0].teamAName} VS ${betData[0].teamBName}`;
 
         await db.query(
-            `INSERT INTO tblpassbook 
-        (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [new ObjectId().toString(),
+            `INSERT INTO tblpassbook
+(id,userName,transactionDescription,transactionType,transactionAmount,balance,betTeamName,timeStamp)
+VALUES (?,?,?,?,?,?,?,?)`,
+            [
+                new ObjectId().toString(),
                 user_name,
                 mergedTeamName,
                 "credit",
                 totalRefund,
-            getWalletCoin[0].tblWalletcol,
+                walletBalance[0].tblWalletcol,
                 "",
-                betStartUTC]
+                betTime
+            ]
         );
 
+        //// RESET BET
+        await db.query(
+            `UPDATE allbets
+SET hasBet=0,
+betAmount=0,
+betTeamName=NULL
+WHERE id=?`,
+            [betId]
+        );
 
-
-        // ✅ Final response
+        //// FINAL RESPONSE (SAME AS YOUR REQUIREMENT)
         return res.json({
             success: true,
             message: "All pending bets cancelled and amount refunded",
@@ -378,12 +350,16 @@ const closeBetTransaction = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("❌ closeBetTransaction error:", error);
+
+        console.log("Cancel Bet Error:", error);
+
         return res.status(500).json({
             success: false,
             message: "Server error"
         });
+
     }
+
 };
 
 
@@ -404,11 +380,11 @@ const getBetTransaction = async (req, res) => {
                 match = match && row.betId == betId;
             }
 
+
             // Filter only if id has a value
             if (user_name) {
                 match = match && row.user_name == user_name;
             }
-
 
             return match;
         });
@@ -462,6 +438,58 @@ const getTotalWalletAmount = async (req, res) => {
 };
 
 
+const passbook = async (req, res) => {
+    try {
+
+        const page = parseInt(req.body.page) || 1;
+        const limit = parseInt(req.body.limit) || 10;
+        const userName = req.body.userName;
+
+        const offset = (page - 1) * limit;
+        let query = `SELECT * FROM tblpassbook`;
+        let countQuery = `SELECT COUNT(*) as total FROM tblpassbook`;
+
+        let params = [];
+
+        if (userName) {
+            query += ` WHERE userName = ?`;
+            countQuery += ` WHERE userName = ?`;
+            params.push(userName);
+        }
+
+        query += ` ORDER BY timeStamp DESC LIMIT ? OFFSET ?`;
+        params.push(limit, offset);
+
+        const [rows] = await db.query(query, params);
+
+        const [count] = await db.query(
+            countQuery,
+            userName ? [userName] : []
+        );
+
+        const totalRecords = count[0].total;
+        const totalPages = Math.ceil(totalRecords / limit);
+
+        res.json({
+            success: true,
+            data: rows,
+            totalRecords,
+            page,
+            limit,
+            totalPages
+
+        });
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+}
+
+
 
 
 const winningStatsuUpdate = async (req, res) => {
@@ -501,14 +529,6 @@ const winningStatsuUpdate = async (req, res) => {
         // ================= MATCH CANCEL CASE =================
         if (winnerTeam.toLowerCase() === "cancel") {
 
-            // Get pending bets
-            const [allBets] = await connection.query(
-                `SELECT user_name, amountOfBat 
-                 FROM tblbattranscation 
-                 WHERE betId = ? AND batStatus = 'pending'`,
-                [betId]
-            );
-
             // Update status
             await connection.query(
                 `UPDATE tblbattranscation 
@@ -517,7 +537,13 @@ const winningStatsuUpdate = async (req, res) => {
                 [betId]
             );
 
-            
+            // Get pending bets
+            const [allBets] = await connection.query(
+                `SELECT user_name, amountOfBat 
+                 FROM tblbattranscation 
+                 WHERE betId = ? AND batStatus = 'cancelled'`,
+                [betId]
+            );
 
             let totalRefund = 0;
 
@@ -595,7 +621,7 @@ const winningStatsuUpdate = async (req, res) => {
 
         // ================= GET WINNERS =================
         const [winners] = await connection.query(
-            `SELECT user_name, leagueName, teamAname, teamBname, amountOfBat, tossRate
+            `SELECT user_name, leagueName, teamAname, teamBname, amountOfBat, tossRate, batteamname
              FROM tblbattranscation
              WHERE betId = ?
              AND batteamname = ?
@@ -660,6 +686,14 @@ const winningStatsuUpdate = async (req, res) => {
                 const leagueName = winner.leagueName.trim();
                 const teamAname = winner.teamAname.trim();
                 const teamBname = winner.teamBname.trim();
+                const batteamname = winner.batteamname.trim();
+
+
+                console.log("leagueName " + leagueName);
+                console.log("teamAname " + teamAname);
+                console.log("teamBname " + teamBname);
+                console.log("batteamname " + batteamname);
+
 
 
                 const mergedTeamName = `Win bet on ${leagueName} ${teamAname} VS ${teamBname}`;
@@ -674,7 +708,7 @@ const winningStatsuUpdate = async (req, res) => {
                         "credit",
                         winAmount,
                         newBal,
-                    winner.batteamname,
+                        batteamname,
                         betStartUTC]
                 );
 
@@ -795,87 +829,85 @@ const winningStatsuUpdate = async (req, res) => {
 
 const placebet = async (req, res) => {
     try {
+
         const { userName, betId, betTeamName, amountOfBet } = req.body;
 
         if (!userName) {
-            return res.status(500).send({
+            return res.status(400).send({
                 success: false,
-                message: 'Please your name'
-            })
-        } else if (!betId) {
-            return res.status(500).send({
-                success: false,
-                message: 'Please enter bet id'
-            })
-        } else if (!betTeamName) {
-            return res.status(500).send({
-                success: false,
-                message: 'Please select team name'
-            })
-        } else if (!amountOfBet) {
-            return res.status(500).send({
-                success: false,
-                message: 'Please enter amount'
-            })
+                message: "Please enter user name"
+            });
         }
 
+        if (!betId) {
+            return res.status(400).send({
+                success: false,
+                message: "Please enter bet id"
+            });
+        }
+
+        if (!betTeamName) {
+            return res.status(400).send({
+                success: false,
+                message: "Please select team name"
+            });
+        }
+
+        if (!amountOfBet) {
+            return res.status(400).send({
+                success: false,
+                message: "Please enter amount"
+            });
+        }
+
+        // ---------------- GET USER WALLET ----------------
 
         const [user] = await db.query(
-            `SELECT tblWalletcol, exposure FROM tblwallet WHERE user_name = ?`,
+            `SELECT tblWalletcol, exposure, bonus 
+             FROM tblwallet 
+             WHERE user_name = ?`,
             [userName]
         );
 
-        console.log("user", user);
-
-
         if (user.length === 0) {
-            return res.status(404).json({ success: false, message: "User data is not found" });
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
         }
 
-
-        const currentBalance = parseFloat(user[0].tblWalletcol);
+        const walletBalance = parseFloat(user[0].tblWalletcol);
+        const bonusBalance = parseFloat(user[0].bonus || 0);
+        const exposure = parseFloat(user[0].exposure || 0);
         const betAmount = parseFloat(amountOfBet);
 
-        // ❌ Block bet if insufficient balance
-        if (currentBalance <= 0) {
+        // ---------------- BONUS LOGIC ----------------
+
+        const maxBonusUse = betAmount * 0.10; // 10%
+        const bonusUsed = Math.min(maxBonusUse, bonusBalance);
+        const walletUsed = betAmount - bonusUsed;
+
+        if (walletUsed > walletBalance) {
             return res.status(400).json({
                 success: false,
-                message: "Wallet balance is zero. Please add funds to place a bet.",
+                message: `Insufficient wallet balance. Wallet ₹${walletBalance}, required ₹${walletUsed}`
             });
         }
 
-        if (betAmount > currentBalance) {
-            return res.status(400).json({
-                success: false,
-                message: `Insufficient balance. You have ₹${currentBalance}, but tried to bet ₹${betAmount}.`,
-            });
-        }
+        // ---------------- BET DATA ----------------
 
-
-        const newId = new ObjectId().toString(); // "68f3c188b6ecebf82de1e767"
-
-        const formatDateForMySQL = (date) => {
-            const d = new Date(date);
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            const hh = String(d.getHours()).padStart(2, '0');
-            const min = String(d.getMinutes()).padStart(2, '0');
-            const ss = String(d.getSeconds()).padStart(2, '0');
-            return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
-        };
-
-        const betStartTime = formatDateForMySQL(new Date());
-
-
-        // 🧩 3️⃣ Fetch bet details from `allbets`
         const [betData] = await db.query(
-            `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive  FROM allbets WHERE id = ?`,
+            `SELECT leagueName, teamAName, teamBName, tossRate, betEndTime, isActive 
+             FROM allbets 
+             WHERE id = ?`,
             [betId]
         );
 
         if (betData.length === 0) {
-            return res.status(404).json({ success: false, message: "Bet not found" });
+            return res.status(404).json({
+                success: false,
+                message: "Bet not found"
+            });
         }
 
         const { leagueName, teamAName, teamBName, tossRate, betEndTime, isActive } = betData[0];
@@ -890,98 +922,131 @@ const placebet = async (req, res) => {
         const now = new Date();
         const endTime = new Date(betEndTime);
 
-
         if (now > endTime) {
             return res.status(400).json({
                 success: false,
-                message: "Bet is closed. The betting window has ended.",
+                message: "Bet is closed"
             });
         }
 
-        // current time
-        await db.query(
-            `INSERT INTO tblbattranscation 
-            (id, user_name, betId, batteamname, amountOfBat, batStatus, timeStamp,leagueName,teamAname,teamBname,tossRate) 
-            VALUES (?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?)`,
-            [newId, userName, betId, betTeamName, amountOfBet, 'pending', betStartTime, leagueName, teamAName, teamBName, tossRate]
-        );
+        // ---------------- TIME FORMAT ----------------
 
-        const betTransaction = {
-            newId, // or use a UUID if your table uses CHAR(24)
-            userName,
-            betId,
-            betTeamName,
-            amountOfBet,
-            betStatus: 'pending',
-            timeStamp: betStartTime
+        const formatDateForMySQL = (date) => {
+            const d = new Date(date);
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
         };
 
+        const betStartTime = formatDateForMySQL(new Date());
 
+        // ---------------- INSERT BET ----------------
 
-        const updatedBalance = parseFloat(user[0].tblWalletcol) - amountOfBet;
-        const updatedExposure = parseFloat(user[0].exposure) + amountOfBet;
-
+        const betTransactionId = new ObjectId().toString();
 
         await db.query(
-            `UPDATE tblwallet SET tblWalletcol = ?, exposure = ? WHERE user_name = ?`,
-            [updatedBalance, updatedExposure, userName]
+            `INSERT INTO tblbattranscation
+            (id, user_name, betId, batteamname, amountOfBat, walletUsed, bonusUsed,batStatus, timeStamp, leagueName, teamAname, teamBname, tossRate)
+            VALUES (?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?)`,
+            [
+                betTransactionId,
+                userName,
+                betId,
+                betTeamName,
+                betAmount,
+                walletUsed,
+                bonusUsed,
+                'pending',
+                betStartTime,
+                leagueName,
+                teamAName,
+                teamBName,
+                tossRate
+            ]
         );
 
+        // ---------------- UPDATE WALLET ----------------
 
-        const [getWalletCoin] = await db.query(
-            "SELECT tblWalletcol FROM tblwallet WHERE user_name = ?",
-            [userName]
+        const updatedWallet = walletBalance - walletUsed;
+        const updatedBonus = bonusBalance - bonusUsed;
+        const updatedExposure = exposure + betAmount;
+
+        await db.query(
+            `UPDATE tblwallet 
+             SET tblWalletcol = ?, bonus = ?, exposure = ? 
+             WHERE user_name = ?`,
+            [
+                updatedWallet,
+                updatedBonus,
+                updatedExposure,
+                userName
+            ]
         );
+
+        // ---------------- PASSBOOK ----------------
 
         const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
+
         const mergedTeamName = `Bet on ${leagueName} ${teamAName} VS ${teamBName}`;
 
         await db.query(
-            `INSERT INTO tblpassbook 
-        (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [new ObjectId().toString(),
+            `INSERT INTO tblpassbook
+            (id, userName, transactionDescription, transactionType, transactionAmount, balance, betTeamName, timeStamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                new ObjectId().toString(),
                 userName,
                 mergedTeamName,
                 "debit",
-                amountOfBet,
-            getWalletCoin[0].tblWalletcol,
+                betAmount,
+                updatedWallet,
                 betTeamName,
-                betStartUTC]
+                betStartUTC
+            ]
         );
 
+        // ---------------- UPDATE BET TABLE ----------------
 
-        // ✅ Step 4 — Update allbets table → hasBet = 1
         await db.query(
             `UPDATE allbets 
-             SET hasBet = 1, betTeamName = ?, betAmount = ? 
+             SET hasBet = 1, betTeamName = ?, betAmount = ?
              WHERE id = ?`,
-            [betTeamName, amountOfBet, betId]
+            [
+                betTeamName,
+                betAmount,
+                betId
+            ]
         );
 
-
-        // await db.commit
+        // ---------------- RESPONSE ----------------
 
         res.json({
             success: true,
-            message: "Bet Place successfully",
+            message: "Bet placed successfully",
+            walletUsed,
+            bonusUsed,
             data: {
-                betTransaction,
-                userBalance: updatedBalance,
-                userExposure: updatedExposure
+                walletBalance: updatedWallet,
+                bonusBalance: updatedBonus,
+                exposure: updatedExposure
             }
         });
 
-
     } catch (error) {
-        console.log(error)
+
+        console.log(error);
+
         res.status(500).send({
             success: false,
-            message: 'Error in place bat API',
+            message: "Error in place bet API",
             error
-        })
+        });
     }
-}
+};
 
 const GetWallet = async (req, res) => {
 
@@ -1156,7 +1221,7 @@ const WithdrawalMoney = async (req, res) => {
 const insert_CoinInWallet = async (req, res) => {
 
     try {
-        const { user_id, coins } = req.body;
+        const { user_id, coins, bonus } = req.body;
 
         if (!user_id) {
             return res.status(500).send({
@@ -1170,10 +1235,19 @@ const insert_CoinInWallet = async (req, res) => {
             })
         }
 
+
+
         const [getUserName] = await db.query(
             "SELECT user_name FROM tblregistration WHERE user_id = ?",
             [user_id]
         );
+
+
+        const coinsValue = Number(coins);
+        const bonusCoins = Number(bonus) || 0;
+
+        // bonus calculation
+        const bonusAmount = (coinsValue * bonusCoins) / 100;
 
 
 
@@ -1183,9 +1257,12 @@ const insert_CoinInWallet = async (req, res) => {
         // 1️⃣ Try update
         const [result] = await db.query(
             `UPDATE tblwallet 
-     SET tblWalletcol = tblWalletcol + ?, totalamount = totalamount + ? 
+                SET 
+                tblWalletcol = tblWalletcol + ?, 
+                bonus = IFNULL(bonus,0) + ?,
+                totalamount = totalamount + ? 
      WHERE user_id = ?`,
-            [coins, coins, user_id]
+            [coins, bonusAmount, coinsValue + bonusAmount, user_id]
         );
 
         const [getWalletCoin] = await db.query(
@@ -2239,7 +2316,7 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const cleanName = file.originalname.replace(/[^a-zA-Z0-9.]/g, "");
-        cb(null, Date.now() + "_" + cleanName);
+        cb(null, Date.now() + "-" + cleanName);
     },
 });
 
@@ -2267,21 +2344,40 @@ const fileFilter = (req, file, cb) => {
 // Initialize multer middleware
 const upload = multer({ storage, fileFilter });
 
+const uploadImageToImgbb = async (filePath) => {
+    try {
 
 
+        const form = new FormData();
+        form.append("image", fs.createReadStream(filePath));
+
+        const response = await axios.post(
+            "https://api.imgbb.com/1/upload?key=d4453dbfe9194ff15354ba4d89e31d63",
+            form,
+            {
+                headers: form.getHeaders()
+            }
+        );
+
+        return response.data.data.url;
+
+    } catch (error) {
+        console.error("Image upload error:", error.message);
+        throw error;
+    }
+};
 
 const createAllBetsWithImage = async (req, res) => {
-
-
     try {
         const {
+            id,
             teamAName,
             teamBName,
             leagueName,
             sportType,
-            betEndTime,   // "2026-01-03 21:55:00"
+            betEndTime,
             tossRate,
-            userZone     // "Asia/Kolkata"
+            userZone
         } = req.body;
 
         if (!teamAName || !teamBName || !leagueName || !sportType || !betEndTime || !tossRate) {
@@ -2291,9 +2387,7 @@ const createAllBetsWithImage = async (req, res) => {
             });
         }
 
-        // 🌍 User timezone (India default)
         const zone = userZone || "Asia/Kolkata";
-
 
         const formats = [
             "YYYY-MM-DD HH:mm:ss",
@@ -2303,50 +2397,86 @@ const createAllBetsWithImage = async (req, res) => {
 
         const betEndUser = moment.tz(betEndTime, formats, zone);
 
-
-
-        // 1️⃣ Parse user input time in user's timezone
-        // const betEndUser = moment
-        //   .tz(betEndTime, "YYYY-MM-DD HH:mm:ss", zone)
-        //   .utc()
-        //   .format("YYYY-MM-DD HH:mm:ss");
-
         if (!betEndUser.isValid()) {
             return res.status(400).json({
                 success: false,
-                message: "Invalid date format. Use YYYY-MM-DD HH:mm:ss"
+                message: "Invalid date format"
             });
         }
 
-        // 2️⃣ Convert to UTC
         const betEndUTC = betEndUser.utc().format("YYYY-MM-DD HH:mm:ss");
         const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
 
-
-
-
-
-        // 🖼 Image upload
+        // IMAGE
         let imageUrl = null;
+
         if (req.file) {
-
-            const cleanName = req.file.filename.replace(/\s+/g, "_");
-
-            console.log("req.file.filename", req.file.filename);
-            console.log("req.file.filename cleanName ", cleanName);
-
-            imageUrl = `${cleanName}`;
+            // const cleanName = req.file.filename.replace(/\s+/g, "_");
+            imageUrl = await uploadImageToImgbb(req.file.path);
         }
+
+        const mergedTeamName = `${teamAName} VS ${teamBName}`;
+
+        /* =====================================================
+           UPDATE
+        ===================================================== */
+
+        if (id && id.trim() !== "" && id !== "null" && id !== "undefined") {
+
+            let sql = `
+                UPDATE allbets SET
+                teamAName = ?,
+                teamBName = ?,
+                leagueName = ?,
+                sportType = ?,
+                betEndTime = ?,
+                tossRate = ?
+            `;
+
+            const params = [
+                teamAName,
+                teamBName,
+                leagueName,
+                sportType,
+                betEndUTC,
+                tossRate
+            ];
+
+            if (imageUrl) {
+                sql += `, imageUrl = ?`;
+                params.push(imageUrl);
+            }
+
+            sql += ` WHERE id = ?`;
+            params.push(id);
+
+            await db.query(sql, params);
+
+            await db.query(
+                `UPDATE tblallbetgetid
+                 SET leagueName = ?, teamAandteamB = ?
+                 WHERE id = ?`,
+                [leagueName, mergedTeamName, id]
+            );
+
+            return res.json({
+                success: true,
+                message: "Bet updated successfully"
+            });
+        }
+
+        /* =====================================================
+           INSERT
+        ===================================================== */
 
         const newId = new ObjectId().toString();
 
-        // 3️⃣ Insert into allbets (UTC ONLY)
         await db.query(
             `INSERT INTO allbets
-       (id, teamAName, teamBName, leagueName, sportType,
-        betStartTime, betEndTime, tossRate, imageUrl,
-        hasBet, betTeamName, betAmount, isActive, isDelete)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, teamAName, teamBName, leagueName, sportType,
+             betStartTime, betEndTime, tossRate, imageUrl,
+             hasBet, betTeamName, betAmount, isActive, isDelete)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 newId,
                 teamAName,
@@ -2365,12 +2495,10 @@ const createAllBetsWithImage = async (req, res) => {
             ]
         );
 
-        // 4️⃣ Tracking table
-        const mergedTeamName = `${teamAName} VS ${teamBName}`;
         await db.query(
             `INSERT INTO tblallbetgetid
-       (id, DateTime, Status, leagueName, teamAandteamB)
-       VALUES (?, ?, ?, ?, ?)`,
+             (id, DateTime, Status, leagueName, teamAandteamB)
+             VALUES (?, ?, ?, ?, ?)`,
             [
                 newId,
                 betStartUTC,
@@ -2384,18 +2512,19 @@ const createAllBetsWithImage = async (req, res) => {
             success: true,
             message: "Bet created successfully",
             id: newId,
-            imageUrl: imageUrl ? `http://localhost:8080${imageUrl}` : null
+            imageUrl: imageUrl
         });
 
     } catch (error) {
+
         console.error("❌ createAllBetsWithImage:", error);
+
         return res.status(500).json({
             success: false,
             message: "Error creating bet",
             error: error.message
         });
     }
-
 };
 
 
@@ -2519,5 +2648,6 @@ export {
     insert_CoinInWallet, placebet, winningStatsuUpdate, getAllBat, login, GetWallet,
     createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
     getAllbetgetid, createAllBetsWithImageUpdateStatus, getAllBatTest, addEvent, getEvent,
-    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2, updateBetStatus, closeBetTransaction, getloginType
+    createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2, updateBetStatus, closeBetTransaction, getloginType,
+    passbook
 }

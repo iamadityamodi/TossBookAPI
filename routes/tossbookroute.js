@@ -33,7 +33,8 @@ import {
   getAllBat2,
   updateBetStatus,
   closeBetTransaction,
-  getloginType
+  getloginType,
+  passbook
   
  } from "../controllers/tossbookcontrollers.js";
 
@@ -62,6 +63,8 @@ router.post("/updateBetStatus", updateBetStatus);
 router.post("/getAllBat2", getAllBat2);
 
 router.post("/createEvent",createEvent);
+
+router.post("/passbook",passbook);
 
 router.post("/createEventNew",createEventNew);
 router.post("/getEventWorldTime",getEventWorldTime );
