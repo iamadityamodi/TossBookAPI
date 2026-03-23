@@ -32,8 +32,6 @@ const login = async (req, res) => {
             [username, password]
         );
 
-
-
         if (rows.length > 0) {
             const user = rows[0]; // get the first (and only) user
             return res.status(200).send({
@@ -127,30 +125,49 @@ const GetMatchcompletedstatus = async (req, res) => {
 
 
 const getAllbetgetid = async (req, res) => {
-
     try {
 
+        const { status, page, limit } = req.body;
 
-        const { status } = req.body;
+        const pageNumber = parseInt(page) || 1;
+        const pageLimit = parseInt(limit) || 10;
+        const offset = (pageNumber - 1) * pageLimit;
 
-        let query = "SELECT * FROM tblallbetgetid";
+        let query = "SELECT * FROM tblallbetgetid WHERE 1=1";
         let params = [];
 
+        let countQuery = "SELECT COUNT(*) as total FROM tblallbetgetid WHERE 1=1";
+        let countParams = [];
+
+        // ✅ status filter
         if (status) {
-            query += " WHERE Status = ?";
+            query += " AND Status = ?";
+            countQuery += " AND Status = ?";
             params.push(status);
+            countParams.push(status);
         }
 
-        query += " ORDER BY id DESC";
+        // ✅ pagination
+        query += " ORDER BY id DESC LIMIT ? OFFSET ?";
+        params.push(pageLimit, offset);
 
         const [data] = await db.query(query, params);
 
-        // data will always be an array, so check its length
+        // ✅ total records
+        const [countResult] = await db.query(countQuery, countParams);
+        const totalRecords = countResult[0].total;
+
+        const totalPages = Math.ceil(totalRecords / pageLimit);
+
         if (data.length === 0) {
-            return res.status(404).send({
+            return res.status(200).send({
                 success: false,
                 message: 'No data found',
-                data: []
+                data: [],
+                totalRecords,
+                totalPages,
+                page: pageNumber,
+                limit: pageLimit
             });
         }
 
@@ -158,17 +175,21 @@ const getAllbetgetid = async (req, res) => {
             success: true,
             message: 'Success.',
             data: data,
-        })
+            totalRecords,
+            totalPages,
+            page: pageNumber,
+            limit: pageLimit
+        });
+
     } catch (error) {
-        console.log(error)
+        console.log(error);
         res.status(500).send({
             success: false,
-            message: 'Error in Get All Student API',
+            message: 'Error in Get All Bet API',
             error
-        })
+        });
     }
-
-}
+};
 
 
 
@@ -470,8 +491,20 @@ const passbook = async (req, res) => {
         const totalRecords = count[0].total;
         const totalPages = Math.ceil(totalRecords / limit);
 
+
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No transaction list",
+                data: rows,
+                totalRecords
+            });
+        }
+
         res.json({
             success: true,
+            message: "Data RetriveRetrieved money transaction list",
             data: rows,
             totalRecords,
             page,
@@ -490,6 +523,99 @@ const passbook = async (req, res) => {
 }
 
 
+const lossbackcredit = async (req, res) => {
+
+    try {
+
+
+        const { userName } = req.body;
+
+        // STEP 1 - Check expired lossback
+        const [expiredRows] = await db.query(
+            `SELECT * FROM tbllossback
+       WHERE userName = ?
+       AND isActive = 1
+       AND timeStamp < UTC_TIMESTAMP() - INTERVAL 24 HOUR`,
+            [userName]
+        );
+
+        if (expiredRows.length > 0) {
+
+            // expire update
+            await db.query(
+                `UPDATE tbllossback 
+         SET isActive = 0
+         WHERE userName = ?
+         AND isActive = 1
+         AND timeStamp < UTC_TIMESTAMP() - INTERVAL 24 HOUR`,
+                [userName]
+            );
+
+            return res.json({
+                status: false,
+                message: "Aapka lossback expire ho chuka hai"
+            });
+
+        }
+
+        // STEP 2 - Get valid lossback
+        const [rows] = await db.query(
+            `SELECT * FROM tbllossback 
+       WHERE userName = ?
+       AND isActive = 1
+       AND isDelete = 0
+       AND timeStamp >= UTC_TIMESTAMP() - INTERVAL 24 HOUR`,
+            [userName]
+        );
+
+        if (rows.length === 0) {
+            return res.json({
+                status: false,
+                message: "No lossback available"
+            });
+        }
+
+        for (let item of rows) {
+
+            const amount = item.lossbackamount;
+            const lossId = item.id;
+
+            // wallet update
+            await db.query(
+                `UPDATE tblwallet
+         SET tblWalletcol = tblWalletcol + ?
+         WHERE user_name = ?`,
+                [amount, userName]
+            );
+
+            // mark used
+            await db.query(
+                `UPDATE tbllossback
+         SET isActive = 0
+         WHERE id = ?`,
+                [lossId]
+            );
+
+        }
+
+        res.json({
+            status: true,
+            message: "Lossback credited successfully"
+        });
+
+    } catch (error) {
+
+        console.log(error);
+
+        res.status(500).json({
+            status: false,
+            message: "Server error"
+        });
+
+    }
+
+};
+
 
 
 const winningStatsuUpdate = async (req, res) => {
@@ -498,7 +624,7 @@ const winningStatsuUpdate = async (req, res) => {
 
     try {
 
-        const { betId, winnerTeam } = req.body;
+        const { betId, winnerTeam, lossbackPercent } = req.body;
 
         if (!betId || !winnerTeam) {
             return res.status(400).json({
@@ -631,7 +757,7 @@ const winningStatsuUpdate = async (req, res) => {
 
         // ================= GET LOSERS =================
         const [losers] = await connection.query(
-            `SELECT user_name, leagueName, teamAname, teamBname, amountOfBat
+            `SELECT user_name, leagueName, teamAname, teamBname, amountOfBat, batStatus, batteamname
              FROM tblbattranscation
              WHERE betId = ?
              AND batteamname != ?
@@ -727,8 +853,26 @@ const winningStatsuUpdate = async (req, res) => {
         // ================= UPDATE LOSERS EXPOSURE =================
         for (const loser of losers) {
 
+
+
             const userName = loser.user_name.trim();
+            const leagueName = loser.leagueName.trim();
+            const teamAname = loser.teamAname.trim();
+            const teamBname = loser.teamBname.trim();
+            const batStatus = loser.batStatus.trim();
+            const batteamname = loser.batteamname.trim();
             const amount = parseFloat(loser.amountOfBat);
+            const betStartUTC = DateTime.utc().toSQL({ includeOffset: false });
+
+            console.log("betStartUTC" + betStartUTC);
+            console.log("userName" + userName);
+            console.log("leagueName" + leagueName);
+            console.log("teamAname" + teamAname);
+            console.log("teamBname" + teamBname);
+            console.log("batStatus" + batStatus);
+            console.log("batteamname" + batteamname);
+            console.log("amount" + amount);
+
 
             const [wallet] = await connection.query(
                 "SELECT exposure FROM tblwallet WHERE user_name = ?",
@@ -753,6 +897,36 @@ const winningStatsuUpdate = async (req, res) => {
                     [userName, 0, -amount]
                 );
             }
+
+            // const lossbackPercent = 10; // 5%
+
+            const bonus = (loser.amountOfBat * lossbackPercent) / 100;
+
+
+            await db.query(
+                `INSERT INTO tbllossback 
+        (id, userName, leagueName, teamAname, teamBname,
+        betTeamName, batStatus, amountOfBat, lossbackamount, timeStamp,
+        isActive, isDelete)
+        VALUES (?, ?, ?, ?, ?, 
+                ?, ?, ?, ?, ?, 
+                ?, ?)`,
+                [new ObjectId().toString(),
+                    userName,
+                    leagueName,
+                    teamAname,
+                    teamBname,
+
+                    batteamname,
+                    batStatus,
+                    amount,
+                    bonus,
+                    betStartUTC,
+                    1,
+                    0
+                ]
+            );
+
         }
 
         // ================= TOTAL BET =================
@@ -2284,7 +2458,10 @@ const createAllBets = async (req, res) => {
 
 
         const data = await db.query(
-            `INSERT INTO allbets ( id, teamAName, teamBName, leagueName, sportType , betStartTime, betEndTime, tossRate, imageUrl, hasBet, betTeamName, betAmount, isActive, isDelete)  VALUES
+            `INSERT INTO allbets ( id, 
+            teamAName, teamBName, leagueName, sportType , betStartTime, betEndTime,
+             tossRate, imageUrl, hasBet, 
+             betTeamName, betAmount, isActive, isDelete)  VALUES
              (?, ?, ?, ?, ?, ?,?, ?, ?,?, ?,?, ?,?)`,
             [newId, teamAName, teamBName, leagueName, sportType, betStartTime, betEndTimeNew, tossRate, null, false, null, null, isActive, 0])
 
@@ -2350,6 +2527,7 @@ const uploadImageToImgbb = async (filePath) => {
 
         const form = new FormData();
         form.append("image", fs.createReadStream(filePath));
+        // 644528146848
 
         const response = await axios.post(
             "https://api.imgbb.com/1/upload?key=d4453dbfe9194ff15354ba4d89e31d63",
@@ -2380,10 +2558,38 @@ const createAllBetsWithImage = async (req, res) => {
             userZone
         } = req.body;
 
-        if (!teamAName || !teamBName || !leagueName || !sportType || !betEndTime || !tossRate) {
+        if (!teamAName) {
             return res.status(400).json({
                 success: false,
-                message: "All fields are required"
+                message: "Enter Team A Nanme"
+            });
+        } else if (!teamBName) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter Team B Nanme"
+            });
+        } else if (!leagueName) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter Team League Nanme"
+
+            });
+        } else if (!sportType) {
+            return res.status(400).json({
+                success: false,
+                message: "Select Sport Type"
+
+            });
+        } else if (!betEndTime) {
+            return res.status(400).json({
+                success: false,
+                message: "Select Bet End Time"
+
+            });
+        } else if (!tossRate) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter Toss Rate"
             });
         }
 
@@ -2410,10 +2616,22 @@ const createAllBetsWithImage = async (req, res) => {
         // IMAGE
         let imageUrl = null;
 
+        console.log("LogData", req.file.path)
+
         if (req.file) {
             // const cleanName = req.file.filename.replace(/\s+/g, "_");
             imageUrl = await uploadImageToImgbb(req.file.path);
         }
+
+        if (!imageUrl) {
+            return res.status(400).json({
+                success: false,
+                message: "Please Select Image"
+            });
+        }
+
+        console.log("LogData", imageUrl)
+
 
         const mergedTeamName = `${teamAName} VS ${teamBName}`;
 
@@ -2649,5 +2867,5 @@ export {
     createAllBetsWithImage, getBetTransaction, WithdrawalMoney, GetMatchcompletedstatus,
     getAllbetgetid, createAllBetsWithImageUpdateStatus, getAllBatTest, addEvent, getEvent,
     createEvent, getFutureEvents, createEventNew, getEventWorldTime, getAllBat2, updateBetStatus, closeBetTransaction, getloginType,
-    passbook
+    passbook, lossbackcredit
 }

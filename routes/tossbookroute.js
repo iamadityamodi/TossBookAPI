@@ -34,7 +34,8 @@ import {
   updateBetStatus,
   closeBetTransaction,
   getloginType,
-  passbook
+  passbook,
+  lossbackcredit
   
  } from "../controllers/tossbookcontrollers.js";
 
@@ -98,6 +99,8 @@ router.post("/matchcompletedstatus", GetMatchcompletedstatus);
 router.post("/place_bet", placebet);
 
 router.post("/winningStatsuUpdate",winningStatsuUpdate);
+
+router.post("/lossbackcredit",lossbackcredit);
 
 // router.post("/allsattlement",allsattlement);
 
